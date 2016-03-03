@@ -605,7 +605,7 @@ class PdoAdapter implements AdapterInterface
 
         $stmt      = $this->db->prepare($sql);
         $chunk     = 0;
-        $chunkSize = $this->config->get('chunk_size') / 1024; // Bytes -> KB
+        $chunkSize = $this->config->get('chunk_size');
         while (!feof($resource)) {
             $content = stream_get_contents($resource, $chunkSize);
             // when an empty stream is compressed it produces \000
