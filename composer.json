@@ -1,0 +1,32 @@
+{
+    "name": "phlib/flysystem-pdo",
+    "description": "A Flysystem adapter for storing files in a database using PDO",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Luke Richards",
+            "email": "luke.richards@emailcenteruk.com"
+        }
+    ],
+    "require": {
+        "php": ">=5.4.0",
+        "ext-pdo": "*",
+        "ext-zlib": "*",
+
+        "league/flysystem": "^1.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^4.5",
+        "phpunit/dbunit": ">=1.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "Phlib\\Flysystem\\Pdo\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Phlib\\Flysystem\\Pdo\\Tests\\": "tests/"
+        }
+    }
+}

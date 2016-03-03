@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<phpunit bootstrap="vendor/autoload.php" colors="true">
+
+    <php>
+        <!--<var name="PDO_DSN" value="mysql:host=127.0.0.1;dbname=test" />-->
+        <!--<var name="PDO_USER" value="root" />-->
+        <!--<var name="PDO_PASS" value="" />-->
+        <!--<var name="PDO_DBNAME" value="FlysystemPdo" />-->
+    </php>
+
+    <testsuites>
+        <testsuite name="FlysystemPdo Test Suite">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+    <filter>
+        <whitelist>
+            <directory suffix=".php">src/</directory>
+        </whitelist>
+    </filter>
+</phpunit>
