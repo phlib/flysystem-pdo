@@ -42,11 +42,11 @@ class PdoAdapter implements AdapterInterface
         }
         $defaultPrefix = 'flysystem';
         $config->setFallback(new Config([
-            'table_prefix'        => $defaultPrefix,
-            'enable_compression'  => true,
-            'chunk_size'          => 1048576, // 1MB chunks
-            'temp_dir'            => sys_get_temp_dir(),
-            'use_mysql_buffering' => false
+            'table_prefix'           => $defaultPrefix,
+            'enable_compression'     => true,
+            'chunk_size'             => 1048576, // 1MB chunks, in bytes
+            'temp_dir'               => sys_get_temp_dir(),
+            'enable_mysql_buffering' => false
         ]));
         $this->config = $config;
 
@@ -406,7 +406,7 @@ class PdoAdapter implements AdapterInterface
     protected function extractChunks($pathId, $resource)
     {
         $bufferingEnabled = $this->db->getAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY);
-        $disableBuffering = (bool)$this->config->get('use_mysql_buffering');
+        $disableBuffering = (bool)$this->config->get('enable_mysql_buffering');
         if ($disableBuffering && $bufferingEnabled) {
             $this->db->setAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
         }
