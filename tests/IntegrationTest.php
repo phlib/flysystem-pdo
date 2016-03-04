@@ -63,11 +63,12 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
 
     public function setUp()
     {
-        parent::setUp();
-
         if (!static::$pdo instanceof \PDO) {
             $this->markTestSkipped();
+            return;
         }
+
+        parent::setUp();
 
         $this->adapter = new PdoAdapter(static::$pdo);
         $this->emptyConfig = new Config();
