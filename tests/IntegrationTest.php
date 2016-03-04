@@ -2,6 +2,7 @@
 
 namespace Phlib\Flysystem\Pdo\Tests;
 
+use League\Flysystem\AdapterInterface;
 use Phlib\Flysystem\Pdo\PdoAdapter;
 use League\Flysystem\Config;
 use PHPUnit_Extensions_Database_DataSet_IDataSet;
@@ -118,7 +119,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }
     }
 
-    public function testInsertEmptyFile()
+    public function testWritingEmptyFile()
     {
         $filename = $this->createTempFilename();
         $handle   = $this->createFile($filename, 0);
@@ -169,7 +170,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         ];
     }
 
-    public function testCompressionIsUsed()
+    public function testCompressionIsSetOnThePath()
     {
         $filename = $this->createTempFilename();
         $file     = $this->createFile($filename, 10);
@@ -182,6 +183,40 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $actual   = $this->getConnection()->createQueryTable('flysystem_path', $sql);
 
         $this->assertTablesEqual($expected, $actual);
+    }
+
+    public function testCopyingPathMakesAccurateCopy()
+    {
+        $origPath = '/path/to/file.txt';
+        $content  = $this->createFileContent('', 10);
+        $origMeta = $this->adapter->write($origPath, $content, $this->emptyConfig);
+
+        $copyPath = '/path/to/copy.txt';
+        $copyMeta = $this->adapter->copy($origPath, $copyPath);
+
+        $connection  = $this->getConnection();
+        $select      = 'SELECT type, path, mimetype, visibility, size, is_compressed FROM flysystem_path WHERE path_id = %d';
+        $origDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, [$origMeta['path_id']]));
+        $copyDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, [$copyMeta['path_id']]));
+
+        $this->assertTablesEqual($origDataSet, $copyDataSet);
+    }
+
+    public function testCopyingPathMakesAccurateCopyOfChunks()
+    {
+        $origPath = '/path/to/file.txt';
+        $content  = $this->createFileContent('', 10);
+        $origMeta = $this->adapter->write($origPath, $content, $this->emptyConfig);
+
+        $copyPath = '/path/to/copy.txt';
+        $copyMeta = $this->adapter->copy($origPath, $copyPath);
+
+        $connection  = $this->getConnection();
+        $select      = 'SELECT chunk_no, content FROM flysystem_chunk WHERE path_id = %d';
+        $origDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, [$origMeta['path_id']]));
+        $copyDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, [$copyMeta['path_id']]));
+
+        $this->assertTablesEqual($origDataSet, $copyDataSet);
     }
 
     public function testMemoryUsageOnWritingToStream()
@@ -310,6 +345,57 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertEquals(2, $this->getConnection()->getRowCount('flysystem_chunk'));
         $this->adapter->delete('/test.txt');
         $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_chunk'));
+    }
+
+    public function testReadingNonExistentPath()
+    {
+        $this->assertFalse($this->adapter->read('/path/does/not/exist.txt'));
+    }
+
+    public function testReadingStreamForNonExistentPath()
+    {
+        $this->assertFalse($this->adapter->readStream('/path/does/not/exist.txt'));
+    }
+
+    public function testHasForNonExistentPath()
+    {
+        $this->assertFalse($this->adapter->has('/path/does/not/exist.txt'));
+    }
+
+    public function testHasForExistingPath()
+    {
+        $path = '/this/path/does/exist.txt';
+        $this->adapter->write($path, 'some text', $this->emptyConfig);
+        $this->assertTrue($this->adapter->has($path));
+    }
+
+    public function testCopyingNonExistentPath()
+    {
+        $this->assertFalse($this->adapter->copy('/this/does/not/exist.txt', '/my/new/path.txt'));
+    }
+
+    public function testCopyingProducesTheSameFile()
+    {
+        $path     = '/this/path.txt';
+        $filename = $this->createTempFilename();
+        $file     = $this->createFileContent($filename, 100);
+        $this->adapter->writeStream($path, $file, $this->emptyConfig);
+    }
+
+    public function testSettingVisibility()
+    {
+        $path = '/test.txt';
+        $config = new Config(['visibility' => AdapterInterface::VISIBILITY_PUBLIC]);
+        $meta = $this->adapter->write($path, 'Some Content', $config);
+
+        $this->adapter->setVisibility($path, AdapterInterface::VISIBILITY_PRIVATE);
+
+        $rows     = [['visibility' => AdapterInterface::VISIBILITY_PRIVATE]];
+        $expected = (new ArrayDataSet(['flysystem_path' => $rows]))->getTable('flysystem_path');
+        $select   = "SELECT visibility FROM flysystem_path WHERE path_id = {$meta['path_id']}";
+        $actual   = $this->getConnection()->createQueryTable('flysystem_path', $select);
+
+        $this->assertTablesEqual($expected, $actual);
     }
 
     protected function createTempFilename()
