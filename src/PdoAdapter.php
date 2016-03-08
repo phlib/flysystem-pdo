@@ -410,13 +410,14 @@ class PdoAdapter implements AdapterInterface
         if ($disableBuffering && $bufferingEnabled) {
             $this->db->setAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
         }
+        $chunkSize = $this->config->get('chunk_size');
 
         $sql  = "SELECT content FROM {$this->chunkTable} WHERE path_id = :path_id ORDER BY chunk_no ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute(['path_id' => $pathId]);
-
         while ($content = $stmt->fetchColumn()) {
-            fwrite($resource, $content);
+            fwrite($resource, $content, $chunkSize);
+            unset($content);
         }
         rewind($resource);
 
