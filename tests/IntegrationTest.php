@@ -22,6 +22,16 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     protected static $pdo;
 
     /**
+     * @var string
+     */
+    protected static $driver;
+
+    /**
+     * @var array
+     */
+    protected static $tempFiles = [];
+
+    /**
      * @var PdoAdapter
      */
     protected $adapter;
@@ -34,33 +44,49 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     /**
      * @var array
      */
-    protected $tempFiles = [];
-
-    /**
-     * @var array
-     */
     protected $tempHandles = [];
-
-    /**
-     * @var array
-     */
-    protected $charRange = [
-        0,1,2,3,4,5,6,7,8,9,
-        'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
-        '.',' '
-    ];
-
-    /**
-     * @var string|false
-     */
-    protected $previousMemoryLimit = false;
 
     public static function setUpBeforeClass()
     {
         parent::setUpBeforeClass();
-        if (isset($GLOBALS['PDO_DSN']) && isset($GLOBALS['PDO_USER']) && isset($GLOBALS['PDO_PASS']) && isset($GLOBALS['PDO_DBNAME'])) {
-            static::$pdo = new \PDO($GLOBALS['PDO_DSN'], $GLOBALS['PDO_USER'], $GLOBALS['PDO_PASS']);
+        if (!isset($GLOBALS['PDO_DSN']) || !isset($GLOBALS['PDO_USER']) || !isset($GLOBALS['PDO_PASS']) || !isset($GLOBALS['PDO_DBNAME'])) {
+            // insufficient values to work with
+            return;
         }
+
+        $dsn            = $GLOBALS['PDO_DSN'];
+        static::$driver = substr($dsn, 0, strpos($dsn, ':'));
+        static::$pdo    = new \PDO($dsn, $GLOBALS['PDO_USER'], $GLOBALS['PDO_PASS']);
+
+        // create files
+        sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('flysystempdo-test-', true);
+        $tmpDir             = sys_get_temp_dir() . DIRECTORY_SEPARATOR;
+        $emptyFilename      = $tmpDir . uniqid('flysystempdo-test-00B-', true);
+        $tenByteFilename    = $tmpDir . uniqid('flysystempdo-test-10B-', true);
+        $tenKayFilename     = $tmpDir . uniqid('flysystempdo-test-10K-', true);
+        $fifteenMegFilename = $tmpDir . uniqid('flysystempdo-test-15M-', true);
+        static::fillFile($emptyFilename, 0);
+        static::fillFile($tenByteFilename, 10);
+        static::fillFile($tenKayFilename, 10 * 1024);
+        static::fillFile($fifteenMegFilename, 15 * 1024 * 1024);
+        static::$tempFiles = [
+            '00B' => $emptyFilename,
+            '10B' => $tenByteFilename,
+            '10K' => $tenKayFilename,
+            '15M' => $fifteenMegFilename
+        ];
+    }
+
+    public static function tearDownAfterClass()
+    {
+        static::$driver = null;
+        static::$pdo    = null;
+        foreach (static::$tempFiles as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+        parent::tearDownAfterClass();
     }
 
     public function setUp()
@@ -81,11 +107,6 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         foreach ($this->tempHandles as $tempHandle) {
             if (is_resource($tempHandle)) {
                 fclose($tempHandle);
-            }
-        }
-        foreach ($this->tempFiles as $tempFile) {
-            if (is_file($tempFile)) {
-                unlink($tempFile);
             }
         }
 
@@ -109,21 +130,20 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
      */
     protected function getDataSet()
     {
-        $dsn    = $GLOBALS['PDO_DSN'];
-        $driver = substr($dsn, 0, strpos($dsn, ':'));
-        switch ($driver) {
+        switch (static::$driver) {
             case 'mysql':
                 $dataSetFile = dirname(__FILE__) . '/_files/mysql-integration.xml';
                 return $this->createMySQLXMLDataSet($dataSetFile);
             default:
+                $driver = static::$driver;
                 throw new \Exception("Missing dataset for '{$driver}'");
         }
     }
 
     public function testWritingEmptyFile()
     {
-        $filename = $this->createTempFilename();
-        $handle   = $this->createFile($filename, 0);
+        $filename = static::$tempFiles['00B'];
+        $handle   = fopen($filename, 'r');
         $this->adapter->writeStream('/path/to/file.txt', $handle, $this->emptyConfig);
         $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_chunk'));
     }
@@ -137,8 +157,8 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
      */
     public function testWrittenAndReadAreTheSameFile($fileCallback, $writeMethod, $readMethod, $config)
     {
-        $filename = $this->createTempFilename();
-        $file     = call_user_func($fileCallback, $filename, 10);
+        $filename = static::$tempFiles['10K'];
+        $file     = call_user_func($fileCallback, $filename);
 
         $path = '/path/to/file.txt';
         $this->adapter->$writeMethod($path, $file, $config);
@@ -160,21 +180,21 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $compressionConfig  = new Config(['enable_compression' => true]);
         $uncompressedConfig = new Config(['enable_compression' => false]);
         return [
-            [[$this, 'createFile'], 'writeStream', 'readStream', $compressionConfig],
-            [[$this, 'createFile'], 'writeStream', 'read', $compressionConfig],
-            [[$this, 'createFileContent'], 'write', 'readStream', $compressionConfig],
-            [[$this, 'createFileContent'], 'write', 'read', $compressionConfig],
-            [[$this, 'createFile'], 'writeStream', 'readStream', $uncompressedConfig],
-            [[$this, 'createFile'], 'writeStream', 'read', $uncompressedConfig],
-            [[$this, 'createFileContent'], 'write', 'readStream', $uncompressedConfig],
-            [[$this, 'createFileContent'], 'write', 'read', $uncompressedConfig],
+            [[$this, 'createResource'], 'writeStream', 'readStream', $compressionConfig],
+            [[$this, 'createResource'], 'writeStream', 'read', $compressionConfig],
+            ['file_get_contents', 'write', 'readStream', $compressionConfig],
+            ['file_get_contents', 'write', 'read', $compressionConfig],
+            [[$this, 'createResource'], 'writeStream', 'readStream', $uncompressedConfig],
+            [[$this, 'createResource'], 'writeStream', 'read', $uncompressedConfig],
+            ['file_get_contents', 'write', 'readStream', $uncompressedConfig],
+            ['file_get_contents', 'write', 'read', $uncompressedConfig],
         ];
     }
 
     public function testCompressionIsSetOnThePath()
     {
-        $filename = $this->createTempFilename();
-        $file     = $this->createFile($filename, 10);
+        $filename = static::$tempFiles['10B'];
+        $file     = $this->createResource($filename);
         $path     = '/path/to/file.txt';
         $meta     = $this->adapter->writeStream($path, $file, new Config(['enable_compression' => true]));
 
@@ -189,7 +209,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     public function testCopyingPathMakesAccurateCopy()
     {
         $origPath = '/path/to/file.txt';
-        $content  = $this->createFileContent('', 10);
+        $content  = file_get_contents(static::$tempFiles['10B']);
         $origMeta = $this->adapter->write($origPath, $content, $this->emptyConfig);
 
         $copyPath = '/path/to/copy.txt';
@@ -206,7 +226,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     public function testCopyingPathMakesAccurateCopyOfChunks()
     {
         $origPath = '/path/to/file.txt';
-        $content  = $this->createFileContent('', 10);
+        $content  = file_get_contents(static::$tempFiles['10B']);
         $origMeta = $this->adapter->write($origPath, $content, $this->emptyConfig);
 
         $copyPath = '/path/to/copy.txt';
@@ -222,46 +242,56 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
 
     public function testMemoryUsageOnWritingToStream()
     {
-        $this->setupMemoryLimit(-1); // unlimited
+        $filename = static::$tempFiles['15M'];
+        $file     = fopen($filename, 'r');
+        $path     = '/path/to/file.txt';
 
-        $fileSize = 15 * 1024 * 1024; // 15M
-        $filename = $this->createTempFilename();
-        $file     = $this->createFile($filename, $fileSize);
-
-        $initial = memory_get_peak_usage(true);
-        $path    = '/path/to/file.txt';
-        $this->adapter->writeStream($path, $file, $this->emptyConfig);
-        $final   = memory_get_peak_usage(true);
-
-        $variation  = 2 * 1024 * 1024; // 2MB variation seems fair game
-        $difference = $final - $initial;
-
-        $this->assertLessThanOrEqual($variation, $difference);
-
-        $this->tearDownMemoryLimit();
+        $variation = 2 * 1024 * 1024; // 2MB
+        $this->memoryTest(function() use ($path, $file) {
+            $this->adapter->writeStream($path, $file, $this->emptyConfig);
+        }, $variation);
     }
 
-    public function testMemoryUsageOnReadingFromStream()
+    public function testMemoryUsageOnReadingFromStreamWithBuffering()
     {
-        $this->setupMemoryLimit(-1); // unlimited
+        $config = $this->emptyConfig;
+        if (static::$driver == 'mysql') {
+            $config = new Config(['enable_mysql_buffering' => true]);
+        }
+        $adapter = new PdoAdapter(static::$pdo, $config);
 
-        $fileSize = 15 * 1024 * 1024; // 15M
-        $filename = $this->createTempFilename();
-        $file     = $this->createFile($filename, $fileSize);
+        $filename = static::$tempFiles['15M'];
+        $file     = fopen($filename, 'r');
+        $path     = '/path/to/file.txt';
 
-        $path    = '/path/to/file.txt';
-        $this->adapter->writeStream($path, $file, $this->emptyConfig);
+        $adapter->writeStream($path, $file, $this->emptyConfig);
 
-        $initial = memory_get_peak_usage(true);
-        $this->adapter->readStream($path);
-        $final   = memory_get_peak_usage(true);
+        $variation = 2 * 1024 * 1024; // 2MB
+        $this->memoryTest(function () use ($adapter, $path) {
+            $adapter->readStream($path);
+        }, $variation);
+    }
 
-        $variation  = 2 * 1024 * 1024; // 2MB variation seems fair game
-        $difference = $final - $initial;
+    public function testMemoryUsageOnReadingFromStreamWithoutBuffering()
+    {
+        if (static::$driver != 'mysql') {
+            $this->markTestSkipped('Cannot test buffering on non mysql driver.');
+            return;
+        }
 
-        $this->assertLessThanOrEqual($variation, $difference);
+        $config  = new Config(['enable_mysql_buffering' => false]);
+        $adapter = new PdoAdapter(static::$pdo, $config);
 
-        $this->tearDownMemoryLimit();
+        $filename = static::$tempFiles['15M'];
+        $file     = fopen($filename, 'r');
+        $path     = '/path/to/file.txt';
+
+        $adapter->writeStream($path, $file, $this->emptyConfig);
+
+        $variation = 2 * 1024 * 1024; // 2MB
+        $this->memoryTest(function () use ($adapter, $path) {
+            $adapter->readStream($path);
+        }, $variation);
     }
 
     /**
@@ -339,8 +369,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
 
     public function testDeletingFileClearsAllChunks()
     {
-        $filename = $this->createTempFilename();
-        $file = $this->createFileContent($filename, 2 * 1024 * 1024);
+        $file = file_get_contents(static::$tempFiles['15M']);
         $this->adapter->write('/test.txt', $file, $this->emptyConfig);
 
         $this->assertEquals(2, $this->getConnection()->getRowCount('flysystem_chunk'));
@@ -377,9 +406,8 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
 
     public function testCopyingProducesTheSameFile()
     {
-        $path     = '/this/path.txt';
-        $filename = $this->createTempFilename();
-        $file     = $this->createFileContent($filename, 100);
+        $path = '/this/path.txt';
+        $file = $this->createResource(static::$tempFiles['10B']);
         $this->adapter->writeStream($path, $file, $this->emptyConfig);
     }
 
@@ -399,66 +427,38 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertTablesEqual($expected, $actual);
     }
 
-    protected function createTempFilename()
+    protected static function fillFile($filename, $sizeKb)
     {
-        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('flysystempdo-test-', true);
+        $chunkSize = 1024;
+        $handle    = fopen($filename, 'wb+');
+        for ($i = 0; $i < $sizeKb; $i += $chunkSize) {
+            fwrite($handle, static::randomString($chunkSize), $chunkSize);
+        }
+        fclose($handle);
     }
 
-    protected function createFile($filename, $sizeKb)
+    protected static function randomString($length)
     {
-        $this->tempFiles[] = $filename;
-
-        if ($sizeKb == 0) {
-            touch($filename);
-            $handle = fopen($filename, 'wb+');
-            $this->tempHandles[] = $handle;
-            return $handle;
+        static $characters;
+        static $charLength;
+        if (!$characters) {
+            $characters = array_merge(range(0, 9), range('a', 'z'), range('A', 'Z'), [',', '.', ' ', "\n"]);
+            $charLength = count($characters);
+            shuffle($characters);
         }
 
-        $chunkSize    = 1024;
-        $charCount    = $sizeKb;
-        $randomString = $this->randomString($chunkSize);
-        $handle       = fopen($filename, 'wb+');
-        for ($i = 0; $i <= $charCount; $i += $chunkSize) {
-            fwrite($handle, $randomString, $chunkSize);
-        }
-        rewind($handle);
-        $this->tempHandles[] = $handle;
-
-        return $handle;
-    }
-
-    protected function createFileContent($filename, $sizeKb)
-    {
-        return $this->randomString($sizeKb);
-    }
-
-    protected function randomString($length)
-    {
         $string = '';
+        $end = ($charLength - 1);
         for ($i = 0; $i < $length; $i++) {
-            $string .= $this->charRange[array_rand($this->charRange)];
+            $string .= $characters[rand(0, $end)];
         }
         return $string;
     }
 
-    /**
-     * @param string|int $quantity See PHPs setting memory limit
-     */
-    protected function setupMemoryLimit($quantity)
+    protected function createResource($filename)
     {
-        $this->previousMemoryLimit = false;
-        $current = ini_get('memory_limit');
-        if ($current != $quantity) {
-            $this->previousMemoryLimit = ini_set('memory_limit', $quantity);
-        }
-    }
-
-    protected function tearDownMemoryLimit()
-    {
-        if ($this->previousMemoryLimit !== false) {
-            ini_set('memory_limit', $this->previousMemoryLimit);
-            $this->previousMemoryLimit = false;
-        }
+        $handle = fopen($filename, 'r');
+        $this->tempHandles[] = $handle;
+        return $handle;
     }
 }
