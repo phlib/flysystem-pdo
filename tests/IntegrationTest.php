@@ -14,6 +14,8 @@ use PHPUnit_Extensions_Database_DataSet_ArrayDataSet as ArrayDataSet;
  */
 class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
 {
+    use MemoryTestTrait;
+
     /**
      * @var \PDO
      */
