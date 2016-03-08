@@ -372,7 +372,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $file = file_get_contents(static::$tempFiles['15M']);
         $this->adapter->write('/test.txt', $file, $this->emptyConfig);
 
-        $this->assertEquals(2, $this->getConnection()->getRowCount('flysystem_chunk'));
+        $this->assertGreaterThan(0, $this->getConnection()->getRowCount('flysystem_chunk'));
         $this->adapter->delete('/test.txt');
         $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_chunk'));
     }
