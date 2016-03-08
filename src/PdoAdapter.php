@@ -648,7 +648,7 @@ class PdoAdapter implements AdapterInterface
      */
     protected function getTempResource($filename, $content)
     {
-        $resource = fopen($filename, 'w+');
+        $resource = fopen($filename, 'wb+');
         if (!is_resource($content)) {
             fwrite($resource, (string)$content);
         } else {
