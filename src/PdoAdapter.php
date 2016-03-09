@@ -180,7 +180,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $this->deleteChunks($data['path_id']);
-        $this->insertChunks($data, $resource);
+        $this->insertChunks($data['path_id'], $resource);
         $this->cleanupTemp($resource, $filename);
 
         return $this->normalizeMetadata($data);
