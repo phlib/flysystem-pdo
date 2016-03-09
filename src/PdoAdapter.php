@@ -376,7 +376,7 @@ class PdoAdapter implements AdapterInterface
 
         $this->extractChunks($pathId, $resource);
 
-        if ($isCompressed && is_resource($compressFilter)) {
+        if (is_resource($compressFilter)) {
             stream_filter_remove($compressFilter);
         }
 
