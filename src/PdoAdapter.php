@@ -183,6 +183,7 @@ class PdoAdapter implements AdapterInterface
         $this->insertChunks($data['path_id'], $resource);
         $this->cleanupTemp($resource, $filename);
 
+        $data['update_ts'] = date('Y-m-d H:i:s');
         return $this->normalizeMetadata($data);
     }
 
