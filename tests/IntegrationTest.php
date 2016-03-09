@@ -294,6 +294,21 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }, $variation);
     }
 
+    public function testMemoryUsageOnUpdateStream()
+    {
+        $path = '/path/to/file.txt';
+        $file = fopen(static::$tempFiles['10K'], 'r');
+        $this->adapter->writeStream($path, $file, $this->emptyConfig);
+        fclose($file);
+
+        $file = fopen(static::$tempFiles['15M'], 'r');
+
+        $variation = 2 * 1024 * 1024; // 2MB
+        $this->memoryTest(function() use ($path, $file) {
+            $this->adapter->updateStream($path, $file, $this->emptyConfig);
+        }, $variation);
+    }
+
     /**
      * @param array $paths
      * @param int $expectedRows
