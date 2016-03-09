@@ -381,7 +381,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $metadata = $this->normalizeMetadata($data);
-        $metadata['stream'] = $this->getChunkResource($metadata['path_id'], $data['is_compressed']);
+        $metadata['stream'] = $this->getChunkResource($metadata['path_id'], (bool)$data['is_compressed']);
         return $metadata;
     }
 
