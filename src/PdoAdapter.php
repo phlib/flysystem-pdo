@@ -395,15 +395,14 @@ class PdoAdapter implements AdapterInterface
         $filename = $this->getTempFilename();
         $resource = $this->getTempResource($filename, '');
 
-        $compressFilter    = null;
-        $enableCompression = (bool)$this->config->get('enable_compression') || (bool)$isCompressed;
-        if ($enableCompression) {
+        $compressFilter = null;
+        if ($isCompressed) {
             $compressFilter = stream_filter_append($resource, 'zlib.inflate', STREAM_FILTER_WRITE);
         }
 
         $this->extractChunks($pathId, $resource);
 
-        if ($enableCompression && is_resource($compressFilter)) {
+        if ($isCompressed && is_resource($compressFilter)) {
             stream_filter_remove($compressFilter);
         }
 
