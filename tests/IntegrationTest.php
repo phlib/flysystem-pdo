@@ -191,6 +191,50 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         ];
     }
 
+    /**
+     * @param callable $fileCallback
+     * @param string $updateMethod
+     * @param string $readMethod
+     * @param Config $config
+     * @dataProvider updatedAndReadAreTheSameFileDataProvider
+     */
+    public function testUpdatedAndReadAreTheSameFile($fileCallback, $updateMethod, $readMethod, $config)
+    {
+        $path = '/path/to/file.txt';
+        $this->adapter->write($path, file_get_contents(static::$tempFiles['10B']), $this->emptyConfig);
+
+        $filename = static::$tempFiles['10K'];
+        $file     = call_user_func($fileCallback, $filename);
+
+        $this->adapter->$updateMethod($path, $file, $config);
+        $meta = $this->adapter->$readMethod($path);
+
+        if (is_resource($file)) {
+            rewind($file);
+            $file = stream_get_contents($file);
+        }
+        if (isset($meta['stream'])) {
+            $meta['contents'] = stream_get_contents($meta['stream']);
+        }
+        $this->assertEquals($file, $meta['contents']);
+    }
+
+    public function updatedAndReadAreTheSameFileDataProvider()
+    {
+        $compressionConfig  = new Config(['enable_compression' => true]);
+        $uncompressedConfig = new Config(['enable_compression' => false]);
+        return [
+            [[$this, 'createResource'], 'updateStream', 'readStream', $compressionConfig],
+            [[$this, 'createResource'], 'updateStream', 'read', $compressionConfig],
+            ['file_get_contents', 'update', 'readStream', $compressionConfig],
+            ['file_get_contents', 'update', 'read', $compressionConfig],
+            [[$this, 'createResource'], 'updateStream', 'readStream', $uncompressedConfig],
+            [[$this, 'createResource'], 'updateStream', 'read', $uncompressedConfig],
+            ['file_get_contents', 'update', 'readStream', $uncompressedConfig],
+            ['file_get_contents', 'update', 'read', $uncompressedConfig],
+        ];
+    }
+
     public function testCompressionIsSetOnThePath()
     {
         $filename = static::$tempFiles['10B'];
