@@ -179,8 +179,18 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
+        $enableCompression = (bool)$data['is_compressed'];
+        $compressFilter    = null;
+        if ($enableCompression) {
+            $compressFilter = stream_filter_append($resource, 'zlib.deflate', STREAM_FILTER_READ);
+        }
+
         $this->deleteChunks($data['path_id']);
         $this->insertChunks($data['path_id'], $resource);
+
+        if (is_resource($compressFilter)) {
+            stream_filter_remove($compressFilter);
+        }
         $this->cleanupTemp($resource, $filename);
 
         $data['update_ts'] = date('Y-m-d H:i:s');
