@@ -229,13 +229,9 @@ class PdoAdapter implements AdapterInterface
         );
 
         if ($newData['type'] == 'file') {
-            $filename = $this->getTempFilename();
-            $resource = $this->getTempResource($filename, '');
-
-            $this->extractChunks($data['path_id'], $resource);
+            $resource = $this->getChunkResource($data['path_id'], (bool)$data['is_compressed']);
             $this->insertChunks($newData['path_id'], $resource, (bool)$data['is_compressed']);
-
-            $this->cleanupTemp($resource, $filename);
+            $this->cleanupTemp($resource, '');
         }
 
         $newData['update_ts'] = date('Y-m-d H:i:s');
