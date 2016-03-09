@@ -206,13 +206,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $path    = '/some/path/to/file.txt';
         $content = 'Test Content';
         $data    = [
-            'path_id'    => 123,
-            'type'       => 'file',
-            'path'       => $path,
-            'visibility' => 'public',
-            'size'       => 214454,
-            'update_ts'  => date('Y-m-d H:i:s'),
-            'mimetype'   => 'text/plain'
+            'path_id'       => 123,
+            'type'          => 'file',
+            'path'          => $path,
+            'mimetype'      => 'text/plain',
+            'visibility'    => 'public',
+            'size'          => 214454,
+            'is_compressed' => false,
+            'update_ts'     => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -236,13 +237,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/example.json';
         $data = [
-            'path_id'    => 123,
-            'type'       => 'file',
-            'path'       => $path,
-            'visibility' => 'public',
-            'size'       => 214454,
-            'update_ts'  => date('Y-m-d H:i:s'),
-            'mimetype'   => 'text/plain'
+            'path_id'       => 123,
+            'type'          => 'file',
+            'path'          => $path,
+            'mimetype'      => 'text/plain',
+            'visibility'    => 'public',
+            'size'          => 214454,
+            'is_compressed' => false,
+            'update_ts'     => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -256,13 +258,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/missing-extension';
         $data = [
-            'path_id'    => 123,
-            'type'       => 'file',
-            'path'       => $path,
-            'visibility' => 'public',
-            'size'       => 214454,
-            'update_ts'  => date('Y-m-d H:i:s'),
-            'mimetype'   => 'text/plain'
+            'path_id'       => 123,
+            'type'          => 'file',
+            'path'          => $path,
+            'mimetype'      => 'text/plain',
+            'visibility'    => 'public',
+            'size'          => 214454,
+            'is_compressed' => false,
+            'update_ts'     => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -281,13 +284,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $path    = '/some/path/to/file.txt';
         $content = 'Test Content';
         $data    = [
-            'path_id'    => 123,
-            'type'       => 'file',
-            'path'       => $path,
-            'visibility' => 'public',
-            'size'       => 214454,
-            'update_ts'  => date('Y-m-d H:i:s'),
-            'mimetype'   => 'text/plain'
+            'path_id'       => 123,
+            'type'          => 'file',
+            'path'          => $path,
+            'mimetype'      => 'text/plain',
+            'visibility'    => 'public',
+            'size'          => 214454,
+            'is_compressed' => false,
+            'update_ts'     => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -311,13 +315,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/example.json';
         $data = [
-            'path_id'    => 123,
-            'type'       => 'file',
-            'path'       => $path,
-            'visibility' => 'public',
-            'size'       => 214454,
-            'update_ts'  => date('Y-m-d H:i:s'),
-            'mimetype'   => 'text/plain'
+            'path_id'       => 123,
+            'type'          => 'file',
+            'path'          => $path,
+            'mimetype'      => 'text/plain',
+            'visibility'    => 'public',
+            'size'          => 214454,
+            'is_compressed' => false,
+            'update_ts'     => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -332,13 +337,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/missing-extension';
         $data = [
-            'path_id'    => 123,
-            'type'       => 'file',
-            'path'       => $path,
-            'visibility' => 'public',
-            'size'       => 214454,
-            'update_ts'  => date('Y-m-d H:i:s'),
-            'mimetype'   => 'text/plain'
+            'path_id'       => 123,
+            'type'          => 'file',
+            'path'          => $path,
+            'mimetype'      => 'text/plain',
+            'visibility'    => 'public',
+            'size'          => 214454,
+            'is_compressed' => false,
+            'update_ts'     => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
