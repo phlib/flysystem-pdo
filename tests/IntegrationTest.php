@@ -235,6 +235,19 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         ];
     }
 
+    public function testCopyingFile()
+    {
+        $path1 = '/first.txt';
+        $path2 = '/second.txt';
+        $this->adapter->write($path1, file_get_contents(static::$tempFiles['10B']), $this->emptyConfig);
+        $this->adapter->copy($path1, $path2);
+
+        $meta1 = $this->adapter->read($path1);
+        $meta2 = $this->adapter->read($path2);
+
+        $this->assertEquals($meta1['contents'], $meta2['contents']);
+    }
+
     public function testCompressionIsSetOnThePath()
     {
         $filename = static::$tempFiles['10B'];
