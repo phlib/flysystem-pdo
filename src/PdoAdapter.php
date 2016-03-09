@@ -91,12 +91,7 @@ class PdoAdapter implements AdapterInterface
     protected function doWrite($path, $filename, $contents, $resource, Config $config)
     {
         $enableCompression = (bool)$this->config->get('enable_compression');
-        $compressFilter    = null;
-        if ($enableCompression) {
-            $compressFilter = stream_filter_append($resource, 'zlib.deflate', STREAM_FILTER_READ);
-        }
-
-        $data = [
+        $data              = [
             'path'          => $path,
             'type'          => 'file',
             'mimetype'      => Util::guessMimeType($path, $contents),
@@ -114,18 +109,11 @@ class PdoAdapter implements AdapterInterface
             $enableCompression
         );
         if ($data['path_id'] === false) {
-            if ($enableCompression && is_resource($compressFilter)) {
-                stream_filter_remove($compressFilter);
-            }
             $this->cleanupTemp($resource, $filename);
             return false;
         }
 
-        $this->insertChunks($data['path_id'], $resource);
-
-        if (is_resource($compressFilter)) {
-            stream_filter_remove($compressFilter);
-        }
+        $this->insertChunks($data['path_id'], $resource, $enableCompression);
         $this->cleanupTemp($resource, $filename);
 
         $data['update_ts'] = date('Y-m-d H:i:s');
@@ -179,18 +167,8 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        $enableCompression = (bool)$data['is_compressed'];
-        $compressFilter    = null;
-        if ($enableCompression) {
-            $compressFilter = stream_filter_append($resource, 'zlib.deflate', STREAM_FILTER_READ);
-        }
-
         $this->deleteChunks($data['path_id']);
-        $this->insertChunks($data['path_id'], $resource);
-
-        if (is_resource($compressFilter)) {
-            stream_filter_remove($compressFilter);
-        }
+        $this->insertChunks($data['path_id'], $resource, (bool)$data['is_compressed']);
         $this->cleanupTemp($resource, $filename);
 
         $data['update_ts'] = date('Y-m-d H:i:s');
@@ -255,7 +233,7 @@ class PdoAdapter implements AdapterInterface
             $resource = $this->getTempResource($filename, '');
 
             $this->extractChunks($data['path_id'], $resource);
-            $this->insertChunks($newData['path_id'], $resource);
+            $this->insertChunks($newData['path_id'], $resource, (bool)$data['is_compressed']);
 
             $this->cleanupTemp($resource, $filename);
         }
@@ -606,10 +584,16 @@ class PdoAdapter implements AdapterInterface
     /**
      * @param int $pathId
      * @param resource $resource
+     * @param bool $enableCompression
      */
-    protected function insertChunks($pathId, $resource)
+    protected function insertChunks($pathId, $resource, $enableCompression)
     {
         rewind($resource);
+
+        $compressFilter = null;
+        if ($enableCompression) {
+            $compressFilter = stream_filter_append($resource, 'zlib.deflate', STREAM_FILTER_READ);
+        }
 
         $sql = "INSERT INTO {$this->chunkTable} (path_id, chunk_no, content) VALUES";
         $sql .= " (:path_id, :chunk_no, :content)";
@@ -628,6 +612,10 @@ class PdoAdapter implements AdapterInterface
                 'chunk_no' => $chunk++,
                 'content'  => $content
             ]);
+        }
+
+        if (is_resource($compressFilter)) {
+            stream_filter_remove($compressFilter);
         }
     }
 
