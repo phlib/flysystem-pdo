@@ -240,7 +240,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertTablesEqual($origDataSet, $copyDataSet);
     }
 
-    public function testMemoryUsageOnWritingToStream()
+    public function testMemoryUsageOnWritingStream()
     {
         $filename = static::$tempFiles['15M'];
         $file     = fopen($filename, 'r');
@@ -252,7 +252,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }, $variation);
     }
 
-    public function testMemoryUsageOnReadingFromStreamWithBuffering()
+    public function testMemoryUsageOnReadingStreamWithBuffering()
     {
         $config = $this->emptyConfig;
         if (static::$driver == 'mysql') {
@@ -272,7 +272,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }, $variation);
     }
 
-    public function testMemoryUsageOnReadingFromStreamWithoutBuffering()
+    public function testMemoryUsageOnReadingStreamWithoutBuffering()
     {
         if (static::$driver != 'mysql') {
             $this->markTestSkipped('Cannot test buffering on non mysql driver.');
