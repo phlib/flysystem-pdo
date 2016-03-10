@@ -99,7 +99,7 @@ class PdoAdapter implements AdapterInterface
             'path'          => $path,
             'type'          => 'file',
             'mimetype'      => Util::guessMimeType($path, $contents),
-            'visibility'    => $config->get('visibility', 'public'),
+            'visibility'    => $config->get('visibility', AdapterInterface::VISIBILITY_PUBLIC),
             'size'          => filesize($filename),
             'is_compressed' => (int)$enableCompression
         ];
