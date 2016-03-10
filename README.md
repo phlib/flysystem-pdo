@@ -23,6 +23,18 @@ $adapter    = new PdoAdapter($pdo);
 $filesystem = new Filesystem($adapter);
 ```
 
+### Configuration on `write` and `writeStream`
+
+```php
+use League\Flysystem\Config;
+
+$config = new Config([
+    'enable_compression' => false,
+    'visibility'         => AdapterInterface::VISIBILITY_PUBLIC
+]); 
+$adapter->writeStream('/path/to/file.zip', $handle, $config);
+```
+
 ## Configuration
 
 |Name|Type|Default|Description|
@@ -32,6 +44,21 @@ $filesystem = new Filesystem($adapter);
 |chunk_size|*Integer*|`1,048,576`|Changes the size of file chunks stored in bytes. Defaults to 1MB.|
 |temp_dir|*String*|`sys_get_temp_dir()`|Location to store temporary files when they're stored and retrieved.|
 |disable_mysql_buffering|*Boolean*|`true`|Stops large file results being pulled into memory|
+
+### Example
+
+```php
+use League\Flysystem\Config;
+
+$config = new Config([
+    'table_prefix'            => 'flysystem',
+    'enable_compression'      => true,
+    'chunk_size'              => 1048576,
+    'temp_dir'                => '/var/tmp',
+    'disable_mysql_buffering' => true
+]);
+$adapter = new PdoAdapter($pdo, $config);
+```
 
 ## Memory Usage (and gotchas)
 
