@@ -29,6 +29,32 @@ $filesystem = new Filesystem($adapter);
 |----|----|-------|-----------|
 |table_prefix|*String*|`flysystem`|Prepends all tablenames.|
 |enable_compression|*Boolean*|`true`|Compresses a file stored in DB.|
-|chunk_size|*Integer*|`1,048,576`|Changes the size of file chunks stored. Defaults to 1MB.|
+|chunk_size|*Integer*|`1,048,576`|Changes the size of file chunks stored in bytes. Defaults to 1MB.|
 |temp_dir|*String*|`sys_get_temp_dir()`|Location to store temporary files when they're stored and retrieved.|
-|enable_mysql_buffering|*Boolean*|`false`|Stops large file results being pulled into memory|
+|disable_mysql_buffering|*Boolean*|`true`|Stops large file results being pulled into memory|
+
+## Memory Usage (and gotchas)
+
+Any use of `read`, `write` or `update` with large files will cause problems with memory usage. The associated stream 
+methods have been optimised to use as little memory as possible. The adapter first saves the file to the local 
+filesystem before transferring it to the database.
+
+### Buffering
+
+On MySQL, the default behaviour is to buffer all query results. When reading a file back from the database this could 
+cause memory problems. There is a configuration option which disables the buffering. This has the side effect that the 
+pdo connection specified in the constructor is altered to set this attribute.
+
+### Compression
+
+Compression is especially useful when storing text based files. The compression option defaults to on. The side effect 
+of this is that when reading files back some files may cause larger than expected memory usage. As an example, a very 
+large file filled with a single letter 'a', can be compressed to a tiny size. When that file is read, the tiny chunk is 
+expanded and will fill the memory.
+
+When a file is stored, the setting for compression is stored with it. This can not be changed.
+
+## Chunking
+
+Chunking has been implemented to aid where systems have been set up for replication. Packet sizes are a consideration 
+here.

@@ -99,7 +99,12 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         parent::setUp();
 
         $this->adapter = new PdoAdapter(static::$pdo);
-        $this->emptyConfig = new Config();
+
+        $config = [];
+        if (static::$driver == 'mysql') {
+            $config['disable_mysql_buffering'] = true;
+        }
+        $this->emptyConfig = new Config($config);
     }
 
     public function tearDown()
