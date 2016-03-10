@@ -94,7 +94,7 @@ class PdoAdapter implements AdapterInterface
      */
     protected function doWrite($path, $filename, $contents, $resource, Config $config)
     {
-        $enableCompression = (bool)$this->config->get('enable_compression');
+        $enableCompression = (bool)$config->get('enable_compression', $this->config->get('enable_compression'));
         $data              = [
             'path'          => $path,
             'type'          => 'file',
