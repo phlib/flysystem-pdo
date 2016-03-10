@@ -42,11 +42,11 @@ class PdoAdapter implements AdapterInterface
         }
         $defaultPrefix = 'flysystem';
         $config->setFallback(new Config([
-            'table_prefix'           => $defaultPrefix,
-            'enable_compression'     => true,
-            'chunk_size'             => 1048576, // 1MB chunks, in bytes
-            'temp_dir'               => sys_get_temp_dir(),
-            'enable_mysql_buffering' => false
+            'table_prefix'            => $defaultPrefix,
+            'enable_compression'      => true,
+            'chunk_size'              => 1048576, // 1MB chunks, in bytes
+            'temp_dir'                => sys_get_temp_dir(),
+            'disable_mysql_buffering' => true
         ]));
         $this->config = $config;
 
@@ -56,6 +56,10 @@ class PdoAdapter implements AdapterInterface
         }
         $this->pathTable  = "{$tablePrefix}_path";
         $this->chunkTable = "{$tablePrefix}_chunk";
+
+        if ($config->get('disable_mysql_buffering')) {
+            $this->db->setAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
+        }
     }
 
     /**
@@ -389,25 +393,15 @@ class PdoAdapter implements AdapterInterface
      */
     protected function extractChunks($pathId, $resource)
     {
-        $bufferingEnabled = $this->db->getAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY);
-        $disableBuffering = (bool)$this->config->get('enable_mysql_buffering');
-        if ($disableBuffering && $bufferingEnabled) {
-            $this->db->setAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
-        }
         $chunkSize = $this->config->get('chunk_size');
-
-        $sql  = "SELECT content FROM {$this->chunkTable} WHERE path_id = :path_id ORDER BY chunk_no ASC";
-        $stmt = $this->db->prepare($sql);
+        $sql       = "SELECT content FROM {$this->chunkTable} WHERE path_id = :path_id ORDER BY chunk_no ASC";
+        $stmt      = $this->db->prepare($sql);
         $stmt->execute(['path_id' => $pathId]);
         while ($content = $stmt->fetchColumn()) {
             fwrite($resource, $content, $chunkSize);
             unset($content);
         }
         rewind($resource);
-
-        if ($disableBuffering && $bufferingEnabled) {
-            $this->db->setAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
-        }
     }
 
     /**
