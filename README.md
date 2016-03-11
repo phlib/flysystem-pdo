@@ -60,6 +60,17 @@ $config = new Config([
 $adapter = new PdoAdapter($pdo, $config);
 ```
 
+## Schema
+Schemas can be found in the schema directory. Specific types can be changed based on requirements. All field names 
+should remain the same. Notes about the DB specific definitions are below.
+
+### MySQL Notes
+* The `path` column is set to allow up to 255 characters.
+* The `size` column has been set to a unsigned `INT` type to allow for convenient searching. This allows up to 4G files 
+to be recorded. This can be changed to a `VARCHAR` if searching is not required.
+* The size of chunks, allows for up to 16M per chunk.
+
+
 ## Memory Usage (and gotchas)
 
 Any use of `read`, `write` or `update` with large files will cause problems with memory usage. The associated stream 
