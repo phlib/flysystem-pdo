@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<dataset name="FlysystemPdo">
+	<table name="flysystem_chunk">
+		<column>path_id</column>
+		<column>type</column>
+		<column>path</column>
+		<column>mimetype</column>
+		<column>visibility</column>
+		<column>size</column>
+		<column>is_compressed</column>
+		<column>update_ts</column>
+	</table>
+	<table name="flysystem_path">
+        <column>path_id</column>
+        <column>chunk_no</column>
+        <column>content</column>
+	</table>
+</dataset>
