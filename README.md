@@ -1,6 +1,7 @@
 # phlib/flysystem-pdo
 
 [![Build Status](https://img.shields.io/travis/phlib/flysystem-pdo/master.svg)](https://travis-ci.org/phlib/flysystem-pdo)
+[![Codecov](https://img.shields.io/codecov/c/github/phlib/flysystem-pdo.svg)](https://codecov.io/gh/phlib/flysystem-pdo)
 [![Latest Stable Version](https://img.shields.io/packagist/v/phlib/flysystem-pdo.svg)](https://packagist.org/packages/phlib/flysystem-pdo)
 [![Total Downloads](https://img.shields.io/packagist/dt/phlib/flysystem-pdo.svg)](https://packagist.org/packages/phlib/flysystem-pdo)
 
