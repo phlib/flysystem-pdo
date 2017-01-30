@@ -4,6 +4,7 @@
 [![Codecov](https://img.shields.io/codecov/c/github/phlib/flysystem-pdo.svg)](https://codecov.io/gh/phlib/flysystem-pdo)
 [![Latest Stable Version](https://img.shields.io/packagist/v/phlib/flysystem-pdo.svg)](https://packagist.org/packages/phlib/flysystem-pdo)
 [![Total Downloads](https://img.shields.io/packagist/dt/phlib/flysystem-pdo.svg)](https://packagist.org/packages/phlib/flysystem-pdo)
+![Licence](https://img.shields.io/github/license/phlib/flysystem-pdo.svg)
 
 This is a [PDO](http://php.net/manual/en/class.pdo.php) Adapter for the Leagues [Flysystem](http://php.net/manual/en/class.pdo.php).
 
@@ -97,3 +98,18 @@ When a file is stored, the setting for compression is stored with it. This can n
 
 Chunking has been implemented to aid where systems have been set up for replication. Packet sizes are a consideration 
 here.
+
+## License
+
+This package is free software: you can redistribute it and/or modify
+it under the terms of the GNU Lesser General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.

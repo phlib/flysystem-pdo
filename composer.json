@@ -1,7 +1,7 @@
 {
     "name": "phlib/flysystem-pdo",
     "description": "A Flysystem adapter for storing files in a database using PDO",
-    "license": "MIT",
+    "license": "LGPL-3.0",
     "authors": [
         {
             "name": "Luke Richards",
