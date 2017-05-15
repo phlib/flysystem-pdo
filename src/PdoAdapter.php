@@ -625,9 +625,8 @@ class PdoAdapter implements AdapterInterface
      */
     protected function getTempFilename()
     {
-        $pid     = getmypid();
         $tempDir = $this->config->get('temp_dir');
-        return $tempDir . DIRECTORY_SEPARATOR . uniqid("flysystempdo-{$pid}-", true);
+        return tempnam($tempDir, "flysystempdo");
     }
 
     /**
