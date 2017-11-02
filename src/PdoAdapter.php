@@ -370,9 +370,7 @@ class PdoAdapter implements AdapterInterface
      */
     protected function getChunkResource($pathId, $isCompressed)
     {
-        $filename = $this->getTempFilename();
-        $resource = $this->getTempResource($filename, '');
-
+        $resource = fopen('php://temp', 'w+b');
         $compressFilter = null;
         if ($isCompressed) {
             $compressFilter = stream_filter_append($resource, 'zlib.inflate', STREAM_FILTER_WRITE);
