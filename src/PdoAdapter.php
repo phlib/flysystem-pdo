@@ -393,12 +393,15 @@ class PdoAdapter implements AdapterInterface
      */
     protected function extractChunks($pathId, $resource)
     {
-        $chunkSize = $this->config->get('chunk_size');
-        $sql       = "SELECT content FROM {$this->chunkTable} WHERE path_id = :path_id ORDER BY chunk_no ASC";
-        $stmt      = $this->db->prepare($sql);
+        $sql  = "SELECT content FROM {$this->chunkTable} WHERE path_id = :path_id ORDER BY chunk_no ASC";
+        $stmt = $this->db->prepare($sql);
         $stmt->execute(['path_id' => $pathId]);
         while ($content = $stmt->fetchColumn()) {
-            fwrite($resource, $content, $chunkSize);
+            $contentLength = strlen($content);
+            $pointer = 0;
+            while ($pointer < $contentLength) {
+                $pointer += fwrite($resource, substr($content, $pointer, 1024));
+            }
             unset($content);
         }
         rewind($resource);
