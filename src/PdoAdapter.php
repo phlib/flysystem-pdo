@@ -182,7 +182,7 @@ class PdoAdapter implements AdapterInterface
     /**
      * @inheritdoc
      */
-    public function rename($path, $newpath)
+    public function rename($path, $newPath)
     {
         $data = $this->findPathData($path);
         if (!is_array($data)) {
@@ -193,7 +193,7 @@ class PdoAdapter implements AdapterInterface
         $stmt = $this->db->prepare($sql);
 
         // rename the primary node first
-        if (!$stmt->execute(['newpath' => $newpath, 'path_id' => $data['path_id']])) {
+        if (!$stmt->execute(['newpath' => $newPath, 'path_id' => $data['path_id']])) {
             return false;
         }
 
@@ -202,19 +202,19 @@ class PdoAdapter implements AdapterInterface
             $pathLength = strlen($path);
             $listing    = $this->listContents($path, true);
             foreach ($listing as $item) {
-                $newItemPath = $newpath . substr($item['path'], $pathLength);
+                $newItemPath = $newPath . substr($item['path'], $pathLength);
                 $stmt->execute(['newpath' => $newItemPath, 'path_id' => $item['path_id']]);
             }
         }
 
-        $data['path'] = $newpath;
+        $data['path'] = $newPath;
         return $this->normalizeMetadata($data);
     }
 
     /**
      * @inheritdoc
      */
-    public function copy($path, $newpath)
+    public function copy($path, $newPath)
     {
         $data = $this->findPathData($path);
         if (!is_array($data)) {
@@ -222,7 +222,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $newData = $data;
-        $newData['path'] = $newpath;
+        $newData['path'] = $newPath;
         $newData['path_id'] = $this->insertPath(
             $data['type'],
             $newData['path'],
