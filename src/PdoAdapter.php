@@ -104,13 +104,15 @@ class PdoAdapter implements AdapterInterface
             'is_compressed' => (int)$enableCompression
         ];
 
+        $additionalFields = $this->getConfigAdditionalFieldValues($config);
         $data['path_id'] = $this->insertPath(
             'file',
             $data['path'],
             $data['visibility'],
             $data['mimetype'],
             $data['size'],
-            $enableCompression
+            $enableCompression,
+            $additionalFields
         );
         if ($data['path_id'] === false) {
             $this->cleanupTemp($resource, $filename);
@@ -161,13 +163,20 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
+        $additionalMeta   = $this->getConfigAdditionalFieldValues($config);
         $data['size']     = filesize($filename);
         $data['mimetype'] = Util::guessMimeType($data['path'], $contents);
+        $data             = array_merge($data, $additionalMeta);
 
-        $sql    = "UPDATE {$this->pathTable} SET size = :size, mimetype = :mimetype WHERE path_id = :path_id";
-        $update = ['size' => $data['size'], 'mimetype' => $data['mimetype'], 'path_id' => $data['path_id']];
-        $stmt   = $this->db->prepare($sql);
-        if (!$stmt->execute($update)) {
+        $values = array_intersect_key($data, array_flip(['size', 'mimetype']));
+        $setValues = implode(', ', array_map(function ($field) {
+            return "{$field} = :{$field}";
+        }, array_keys($values)));
+
+        $update = "UPDATE {$this->pathTable} SET {$setValues} WHERE path_id = :path_id";
+        $stmt   = $this->db->prepare($update);
+        $params = array_merge($values, ['path_id' => $data['path_id']]);
+        if (!$stmt->execute($params)) {
             return false;
         }
 
@@ -180,20 +189,38 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
+     * @param Config $config
+     * @return array
+     */
+    protected function getConfigAdditionalFieldValues(Config $config)
+    {
+        $additionalFields = $config->get('additional_fields');
+        if (!is_array($additionalFields)) {
+            return [];
+        }
+
+        $meta = [];
+        foreach ($additionalFields as $field => $value) {
+            $meta[$field] = $value;
+        }
+        return $meta;
+    }
+
+    /**
      * @inheritdoc
      */
-    public function rename($path, $newpath)
+    public function rename($path, $newPath)
     {
         $data = $this->findPathData($path);
         if (!is_array($data)) {
             return false;
         }
 
-        $sql  = "UPDATE {$this->pathTable} SET path = :newpath WHERE path_id = :path_id";
-        $stmt = $this->db->prepare($sql);
+        $update = "UPDATE {$this->pathTable} SET path = :newpath WHERE path_id = :path_id";
+        $stmt   = $this->db->prepare($update);
 
         // rename the primary node first
-        if (!$stmt->execute(['newpath' => $newpath, 'path_id' => $data['path_id']])) {
+        if (!$stmt->execute(['newpath' => $newPath, 'path_id' => $data['path_id']])) {
             return false;
         }
 
@@ -202,19 +229,19 @@ class PdoAdapter implements AdapterInterface
             $pathLength = strlen($path);
             $listing    = $this->listContents($path, true);
             foreach ($listing as $item) {
-                $newItemPath = $newpath . substr($item['path'], $pathLength);
+                $newItemPath = $newPath . substr($item['path'], $pathLength);
                 $stmt->execute(['newpath' => $newItemPath, 'path_id' => $item['path_id']]);
             }
         }
 
-        $data['path'] = $newpath;
+        $data['path'] = $newPath;
         return $this->normalizeMetadata($data);
     }
 
     /**
      * @inheritdoc
      */
-    public function copy($path, $newpath)
+    public function copy($path, $newPath)
     {
         $data = $this->findPathData($path);
         if (!is_array($data)) {
@@ -222,14 +249,19 @@ class PdoAdapter implements AdapterInterface
         }
 
         $newData = $data;
-        $newData['path'] = $newpath;
+        $newData['path'] = $newPath;
+        unset($newData['path_id']);
+        unset($newData['update_ts']);
+        $additionalFields = $this->getConfigAdditionalFieldValues(new Config($newData));
+
         $newData['path_id'] = $this->insertPath(
             $data['type'],
             $newData['path'],
             $data['visibility'],
             $data['mimetype'],
             $data['size'],
-            $data['is_compressed']
+            $data['is_compressed'],
+            $additionalFields
         );
 
         if ($newData['type'] == 'file') {
@@ -304,9 +336,9 @@ class PdoAdapter implements AdapterInterface
      */
     public function setVisibility($path, $visibility)
     {
-        $sql  = "UPDATE {$this->pathTable} SET visibility = :visibility WHERE path = :path";
+        $update = "UPDATE {$this->pathTable} SET visibility = :visibility WHERE path = :path";
         $data = ['visibility' => $visibility, 'path' => $path];
-        $stmt = $this->db->prepare($sql);
+        $stmt = $this->db->prepare($update);
         if (!$stmt->execute($data)) {
             return false;
         }
@@ -319,8 +351,8 @@ class PdoAdapter implements AdapterInterface
      */
     public function has($path)
     {
-        $sql  = "SELECT 1 FROM {$this->pathTable} WHERE path = :path LIMIT 1";
-        $stmt = $this->db->prepare($sql);
+        $select = "SELECT 1 FROM {$this->pathTable} WHERE path = :path LIMIT 1";
+        $stmt   = $this->db->prepare($select);
         if (!$stmt->execute(['path' => $path])) {
             return false;
         }
@@ -370,9 +402,7 @@ class PdoAdapter implements AdapterInterface
      */
     protected function getChunkResource($pathId, $isCompressed)
     {
-        $filename = $this->getTempFilename();
-        $resource = $this->getTempResource($filename, '');
-
+        $resource = fopen('php://temp', 'w+b');
         $compressFilter = null;
         if ($isCompressed) {
             $compressFilter = stream_filter_append($resource, 'zlib.inflate', STREAM_FILTER_WRITE);
@@ -393,12 +423,15 @@ class PdoAdapter implements AdapterInterface
      */
     protected function extractChunks($pathId, $resource)
     {
-        $chunkSize = $this->config->get('chunk_size');
-        $sql       = "SELECT content FROM {$this->chunkTable} WHERE path_id = :path_id ORDER BY chunk_no ASC";
-        $stmt      = $this->db->prepare($sql);
+        $select = "SELECT content FROM {$this->chunkTable} WHERE path_id = :path_id ORDER BY chunk_no ASC";
+        $stmt   = $this->db->prepare($select);
         $stmt->execute(['path_id' => $pathId]);
         while ($content = $stmt->fetchColumn()) {
-            fwrite($resource, $content, $chunkSize);
+            $contentLength = strlen($content);
+            $pointer = 0;
+            while ($pointer < $contentLength) {
+                $pointer += fwrite($resource, substr($content, $pointer, 1024));
+            }
             unset($content);
         }
         rewind($resource);
@@ -410,14 +443,14 @@ class PdoAdapter implements AdapterInterface
     public function listContents($directory = '', $recursive = false)
     {
         $params = [];
-        $sql = "SELECT * FROM {$this->pathTable}";
+        $select = "SELECT * FROM {$this->pathTable}";
 
         if (!empty($directory)) {
-            $sql .= " WHERE path LIKE :prefix OR path = :path";
+            $select .= " WHERE path LIKE :prefix OR path = :path";
             $params = ['prefix' => $directory . '/%', 'path' => $directory];
         }
 
-        $stmt = $this->db->prepare($sql);
+        $stmt = $this->db->prepare($select);
         if (!$stmt->execute($params)) {
             return [];
         }
@@ -476,8 +509,8 @@ class PdoAdapter implements AdapterInterface
      */
     protected function findPathData($path)
     {
-        $sql  = "SELECT * FROM {$this->pathTable} WHERE path = :path LIMIT 1";
-        $stmt = $this->db->prepare($sql);
+        $select = "SELECT * FROM {$this->pathTable} WHERE path = :path LIMIT 1";
+        $stmt   = $this->db->prepare($select);
         if (!$stmt->execute(['path' => $path])) {
             return false;
         }
@@ -507,6 +540,17 @@ class PdoAdapter implements AdapterInterface
             $meta['visibility'] = $data['visibility'];
         }
 
+        $additionalFields = $this->config->get('additional_fields');
+        if (is_array($additionalFields)) {
+            foreach ($additionalFields as $field) {
+                if (isset($data[$field])) {
+                    $meta[$field] = $data[$field];
+                } else {
+                    $meta[$field] = null;
+                }
+            }
+        }
+
         return $meta;
     }
 
@@ -528,31 +572,41 @@ class PdoAdapter implements AdapterInterface
      * @param string $type 'file' or 'dir'
      * @param string $path
      * @param string $visibility 'public' or 'private'
-     * @param string $mimetype
+     * @param string $mimeType
      * @param int $size
      * @param bool $enableCompression
+     * @param array $additionalFields
      * @return bool|string
      */
     protected function insertPath(
         $type,
         $path,
         $visibility = null,
-        $mimetype = null,
+        $mimeType = null,
         $size = null,
-        $enableCompression = true
+        $enableCompression = true,
+        $additionalFields = []
     ) {
-        $data = [
-            'type'          => $type == 'dir' ? 'dir' : 'file',
-            'path'          => $path,
-            'visibility'    => $visibility,
-            'mimetype'      => $mimetype,
-            'size'          => $size,
-            'is_compressed' => (int)(bool)$enableCompression
-        ];
+        $data = array_merge(
+            [
+                'type'          => $type == 'dir' ? 'dir' : 'file',
+                'path'          => $path,
+                'visibility'    => $visibility,
+                'mimetype'      => $mimeType,
+                'size'          => $size,
+                'is_compressed' => (int)(bool)$enableCompression
+            ],
+            $additionalFields
+        );
 
-        $sql  = "INSERT INTO {$this->pathTable} (type, path, mimetype, visibility, size, is_compressed)";
-        $sql .= " VALUES (:type, :path, :mimetype, :visibility, :size, :is_compressed)";
-        $stmt = $this->db->prepare($sql);
+        $keys = array_keys($data);
+        $fields = implode(', ', $keys);
+        $values = implode(', ', array_map(function ($field) {
+            return ':' . $field;
+        }, $keys));
+
+        $insert = "INSERT INTO {$this->pathTable} ({$fields}) VALUES ({$values})";
+        $stmt   = $this->db->prepare($insert);
         if (!$stmt->execute($data)) {
             return false;
         }
@@ -566,8 +620,8 @@ class PdoAdapter implements AdapterInterface
      */
     protected function deletePath($pathId)
     {
-        $sql  = "DELETE FROM {$this->pathTable} WHERE path_id = :path_id";
-        $stmt = $this->db->prepare($sql);
+        $delete = "DELETE FROM {$this->pathTable} WHERE path_id = :path_id";
+        $stmt   = $this->db->prepare($delete);
         return (bool)$stmt->execute(['path_id' => $pathId]);
     }
 
@@ -585,10 +639,10 @@ class PdoAdapter implements AdapterInterface
             $compressFilter = stream_filter_append($resource, 'zlib.deflate', STREAM_FILTER_READ);
         }
 
-        $sql = "INSERT INTO {$this->chunkTable} (path_id, chunk_no, content) VALUES";
-        $sql .= " (:path_id, :chunk_no, :content)";
+        $insert = "INSERT INTO {$this->chunkTable} (path_id, chunk_no, content) VALUES";
+        $insert .= " (:path_id, :chunk_no, :content)";
 
-        $stmt      = $this->db->prepare($sql);
+        $stmt      = $this->db->prepare($insert);
         $chunk     = 0;
         $chunkSize = $this->config->get('chunk_size');
         while (!feof($resource)) {
@@ -615,8 +669,8 @@ class PdoAdapter implements AdapterInterface
      */
     protected function deleteChunks($pathId)
     {
-        $sql  = "DELETE FROM {$this->chunkTable} WHERE path_id = :path_id";
-        $stmt = $this->db->prepare($sql);
+        $delete = "DELETE FROM {$this->chunkTable} WHERE path_id = :path_id";
+        $stmt   = $this->db->prepare($delete);
         return (bool)$stmt->execute(['path_id' => $pathId]);
     }
 

@@ -59,7 +59,6 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         static::$pdo    = new \PDO($dsn, $GLOBALS['PDO_USER'], $GLOBALS['PDO_PASS']);
 
         // create files
-        sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('flysystempdo-test-', true);
         $tmpDir             = sys_get_temp_dir() . DIRECTORY_SEPARATOR;
         $emptyFilename      = $tmpDir . uniqid('flysystempdo-test-00B-', true);
         $tenByteFilename    = $tmpDir . uniqid('flysystempdo-test-10B-', true);
