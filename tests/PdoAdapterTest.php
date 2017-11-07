@@ -548,6 +548,19 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals($pathId, $meta['path_id']);
     }
 
+    public function testCreateDirWithAdditionalFields()
+    {
+        $pathId = 12345;
+        $this->setupBasicDbResponse();
+        $this->pdo->expects($this->any())
+            ->method('lastInsertId')
+            ->will($this->returnValue($pathId));
+
+        $adapter = new PdoAdapter($this->pdo, new Config(['additional_fields' => ['owner']]));
+        $meta = $adapter->createDir('/path', new Config(['owner' => 'example']));
+        $this->assertEquals($pathId, $meta['path_id']);
+    }
+
     public function testCreateDirWithDbFailure()
     {
         $this->setupBasicDbResponse(false);
@@ -693,7 +706,30 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
         $meta           = $this->adapter->getMetadata('/path/file.txt');
         $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp'];
-        $unexpectedKeys = array_diff_key(array_flip($expectedKeys), $meta);
+        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
+        $this->assertEmpty($unexpectedKeys);
+    }
+
+    public function testGetMetadataHasCorrectKeysForFileWithAdditionalFields()
+    {
+        $this->setupDbFetchResponse([
+            'path_id'       => 123,
+            'type'          => 'file',
+            'path'          => '/path/file.txt',
+            'mimetype'      => 'text/plain',
+            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
+            'size'          => 1234,
+            'is_compressed' => false,
+            'update_ts'     => date('Y-m-d H:i:s'),
+            'owner'         => 'example',
+            'expiry_ts'     => date('Y-m-d H:i:s'),
+        ]);
+
+        $adapter        = new PdoAdapter($this->pdo, new Config(['additional_fields' => ['owner', 'expiry_ts']]));
+        $meta           = $adapter->getMetadata('/path/file.txt');
+        $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp', 'owner', 'expiry_ts'];
+        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
+
         $this->assertEmpty($unexpectedKeys);
     }
 
@@ -712,7 +748,29 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
         $meta           = $this->adapter->getMetadata('/path/file.txt');
         $expectedKeys   = ['path_id', 'type', 'path', 'timestamp'];
-        $unexpectedKeys = array_diff_key(array_flip($expectedKeys), $meta);
+        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
+        $this->assertEmpty($unexpectedKeys);
+    }
+
+    public function testGetMetadataNormalizesDataForDirectoryWithAdditionalFields()
+    {
+        $this->setupDbFetchResponse([
+            'path_id'       => 123,
+            'type'          => 'dir',
+            'path'          => '/path/file.txt',
+            'mimetype'      => null,
+            'visibility'    => null,
+            'size'          => null,
+            'is_compressed' => 0,
+            'update_ts'     => date('Y-m-d H:i:s'),
+            'owner'         => 'example',
+            'expiry_ts'     => date('Y-m-d H:i:s'),
+        ]);
+
+        $adapter        = new PdoAdapter($this->pdo, new Config(['additional_fields' => ['owner', 'expiry_ts']]));
+        $meta           = $adapter->getMetadata('/path/file.txt');
+        $expectedKeys   = ['path_id', 'type', 'path', 'timestamp', 'owner', 'expiry_ts'];
+        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
         $this->assertEmpty($unexpectedKeys);
     }
 
