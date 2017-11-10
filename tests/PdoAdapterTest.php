@@ -556,9 +556,11 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             ->method('lastInsertId')
             ->will($this->returnValue($pathId));
 
-        $adapter = new PdoAdapter($this->pdo, new Config(['additional_fields' => ['owner']]));
-        $meta = $adapter->createDir('/path', new Config(['owner' => 'example']));
-        $this->assertEquals($pathId, $meta['path_id']);
+        $owner = 'exampleFoo';
+        $meta = $this->adapter->createDir('/path', new Config(['meta' => ['owner' => $owner]]));
+        $this->assertArrayHasKey('meta', $meta);
+        $this->assertArrayHasKey('owner', $meta['meta']);
+        $this->assertEquals($owner, $meta['meta']['owner']);
     }
 
     public function testCreateDirWithDbFailure()
@@ -721,13 +723,12 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             'size'          => 1234,
             'is_compressed' => false,
             'update_ts'     => date('Y-m-d H:i:s'),
-            'owner'         => 'example',
-            'expiry_ts'     => date('Y-m-d H:i:s'),
+            'expiry'        => date('Y-m-d H:i:s', strtotime('+2 days')),
+            'meta'          => json_encode(['owner' => 'exampleFoo']),
         ]);
 
-        $adapter        = new PdoAdapter($this->pdo, new Config(['additional_fields' => ['owner', 'expiry_ts']]));
-        $meta           = $adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp', 'owner', 'expiry_ts'];
+        $meta           = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp', 'expiry', 'meta'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
 
         $this->assertEmpty($unexpectedKeys);
@@ -763,13 +764,12 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             'size'          => null,
             'is_compressed' => 0,
             'update_ts'     => date('Y-m-d H:i:s'),
-            'owner'         => 'example',
-            'expiry_ts'     => date('Y-m-d H:i:s'),
+            'expiry'        => date('Y-m-d H:i:s', strtotime('+2 days')),
+            'meta'          => json_encode(['owner' => 'exampleFoo']),
         ]);
 
-        $adapter        = new PdoAdapter($this->pdo, new Config(['additional_fields' => ['owner', 'expiry_ts']]));
-        $meta           = $adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'timestamp', 'owner', 'expiry_ts'];
+        $meta           = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys   = ['path_id', 'type', 'path', 'timestamp', 'expiry', 'meta'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
         $this->assertEmpty($unexpectedKeys);
     }

@@ -103,8 +103,15 @@ class PdoAdapter implements AdapterInterface
             'size'          => filesize($filename),
             'is_compressed' => (int)$enableCompression
         ];
+        $expiry = null;
+        if ($config->has('expiry')) {
+            $expiry = $data['expiry'] = $config->get('expiry');
+        }
+        $meta = null;
+        if ($config->has('meta')) {
+            $meta = $data['meta'] = $config->get('meta');
+        }
 
-        $additionalFields = $this->getConfigAdditionalFieldValues($config);
         $data['path_id'] = $this->insertPath(
             'file',
             $data['path'],
@@ -112,7 +119,8 @@ class PdoAdapter implements AdapterInterface
             $data['mimetype'],
             $data['size'],
             $enableCompression,
-            $additionalFields
+            $expiry,
+            $meta
         );
         if ($data['path_id'] === false) {
             $this->cleanupTemp($resource, $filename);
@@ -163,12 +171,19 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        $additionalMeta   = $this->getConfigAdditionalFieldValues($config);
+        $searchKeys       = ['size', 'mimetype'];
         $data['size']     = filesize($filename);
         $data['mimetype'] = Util::guessMimeType($data['path'], $contents);
-        $data             = array_merge($data, $additionalMeta);
+        if ($config->has('expiry')) {
+            $data['expiry'] = $config->get('expiry');
+            $searchKeys[] = 'expiry';
+        }
+        if ($config->has('meta')) {
+            $data['meta'] = json_encode($config->get('meta'));
+            $searchKeys[] = 'meta';
+        }
 
-        $values = array_intersect_key($data, array_flip(['size', 'mimetype']));
+        $values = array_intersect_key($data, array_flip($searchKeys));
         $setValues = implode(', ', array_map(function ($field) {
             return "{$field} = :{$field}";
         }, array_keys($values)));
@@ -186,24 +201,6 @@ class PdoAdapter implements AdapterInterface
 
         $data['update_ts'] = date('Y-m-d H:i:s');
         return $this->normalizeMetadata($data);
-    }
-
-    /**
-     * @param Config $config
-     * @return array
-     */
-    protected function getConfigAdditionalFieldValues(Config $config)
-    {
-        $additionalFields = $config->get('additional_fields');
-        if (!is_array($additionalFields)) {
-            return [];
-        }
-
-        $meta = [];
-        foreach ($additionalFields as $field => $value) {
-            $meta[$field] = $value;
-        }
-        return $meta;
     }
 
     /**
@@ -252,7 +249,6 @@ class PdoAdapter implements AdapterInterface
         $newData['path'] = $newPath;
         unset($newData['path_id']);
         unset($newData['update_ts']);
-        $additionalFields = $this->getConfigAdditionalFieldValues(new Config($newData));
 
         $newData['path_id'] = $this->insertPath(
             $data['type'],
@@ -261,7 +257,8 @@ class PdoAdapter implements AdapterInterface
             $data['mimetype'],
             $data['size'],
             $data['is_compressed'],
-            $additionalFields
+            isset($data['expiry']) ? $data['expiry'] : null,
+            isset($data['meta']) ? $data['meta'] : null
         );
 
         if ($newData['type'] == 'file') {
@@ -319,16 +316,25 @@ class PdoAdapter implements AdapterInterface
      */
     public function createDir($dirname, Config $config)
     {
-        $pathId = $this->insertPath('dir', $dirname);
+        $additional = null;
+        if ($config->has('meta')) {
+            $additional = $config->get('meta');
+        }
+        $pathId = $this->insertPath('dir', $dirname, null, null, null, true, null, $additional);
         if ($pathId === false) {
             return false;
         }
-        return $this->normalizeMetadata([
+
+        $data = [
             'type'      => 'dir',
             'path'      => $dirname,
             'path_id'   => $pathId,
             'update_ts' => date('Y-m-d H:i:s')
-        ]);
+        ];
+        if ($additional !== null) {
+            $data['meta'] = json_encode($additional);
+        }
+        return $this->normalizeMetadata($data);
     }
 
     /**
@@ -515,7 +521,12 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        return $stmt->fetch(\PDO::FETCH_ASSOC);
+        $data = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if ($this->hasExpired($data)) {
+            return false;
+        }
+
+        return $data;
     }
 
     /**
@@ -524,7 +535,7 @@ class PdoAdapter implements AdapterInterface
      */
     protected function normalizeMetadata($data)
     {
-        if (!is_array($data) || empty($data)) {
+        if (!is_array($data) || empty($data) || $this->hasExpired($data)) {
             return false;
         }
 
@@ -538,20 +549,33 @@ class PdoAdapter implements AdapterInterface
             $meta['mimetype']   = $data['mimetype'];
             $meta['size']       = $data['size'];
             $meta['visibility'] = $data['visibility'];
-        }
-
-        $additionalFields = $this->config->get('additional_fields');
-        if (is_array($additionalFields)) {
-            foreach ($additionalFields as $field) {
-                if (isset($data[$field])) {
-                    $meta[$field] = $data[$field];
-                } else {
-                    $meta[$field] = null;
-                }
+            if (isset($data['expiry'])) {
+                $meta['expiry'] = $data['expiry'];
             }
         }
 
+        if (isset($data['meta'])) {
+            $meta['meta'] = json_decode($data['meta'], true);
+        }
+
         return $meta;
+    }
+
+    /**
+     * @param array $data
+     * @return bool
+     */
+    protected function hasExpired($data)
+    {
+        if (isset($data['expiry']) &&
+            !empty($data['expiry']) &&
+            strtotime($data['expiry']) !== false &&
+            strtotime($data['expiry']) <= time()
+        ) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -575,7 +599,8 @@ class PdoAdapter implements AdapterInterface
      * @param string $mimeType
      * @param int $size
      * @param bool $enableCompression
-     * @param array $additionalFields
+     * @param string $expiry
+     * @param array $additional
      * @return bool|string
      */
     protected function insertPath(
@@ -585,19 +610,23 @@ class PdoAdapter implements AdapterInterface
         $mimeType = null,
         $size = null,
         $enableCompression = true,
-        $additionalFields = []
+        $expiry = null,
+        $additional = null
     ) {
-        $data = array_merge(
-            [
-                'type'          => $type == 'dir' ? 'dir' : 'file',
-                'path'          => $path,
-                'visibility'    => $visibility,
-                'mimetype'      => $mimeType,
-                'size'          => $size,
-                'is_compressed' => (int)(bool)$enableCompression
-            ],
-            $additionalFields
-        );
+        $data = [
+            'type'          => $type == 'dir' ? 'dir' : 'file',
+            'path'          => $path,
+            'visibility'    => $visibility,
+            'mimetype'      => $mimeType,
+            'size'          => $size,
+            'is_compressed' => (int)(bool)$enableCompression
+        ];
+        if ($expiry !== null) {
+            $data['expiry'] = $expiry;
+        }
+        if ($additional !== null) {
+            $data['meta'] = json_encode($additional);
+        }
 
         $keys = array_keys($data);
         $fields = implode(', ', $keys);
@@ -612,6 +641,28 @@ class PdoAdapter implements AdapterInterface
         }
 
         return $this->db->lastInsertId();
+    }
+
+    /**
+     * @param int|null $nowTs
+     * @return int Number of expired files deleted
+     */
+    public function deleteExpired($nowTs = null)
+    {
+        if ($nowTs === null) {
+            $nowTs = time();
+        }
+        $nowFormatted = date('Y-m-d', (int)$nowTs);
+
+        $select = "SELECT path_id FROM {$this->pathTable} WHERE expired <= :expired";
+        $stmt = $this->db->prepare($select);
+        $stmt->execute([$nowFormatted]);
+
+        while (($row = $stmt->fetch()) !== false) {
+            $this->deletePath($row['path_id']);
+        }
+
+        return $stmt->rowCount();
     }
 
     /**

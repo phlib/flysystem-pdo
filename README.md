@@ -37,7 +37,7 @@ $config = new Config([
 $adapter->writeStream('/path/to/file.zip', $handle, $config);
 ```
 
-## Configuration
+## Adapter Configuration
 
 |Name|Type|Default|Description|
 |----|----|-------|-----------|
@@ -60,6 +60,69 @@ $config = new Config([
     'disable_mysql_buffering' => true
 ]);
 $adapter = new PdoAdapter($pdo, $config);
+```
+
+## File Configuration
+
+The following file configurations were added in version 1.1. These configurations and associated schema changes are 
+optional.
+
+|Name|Type|Description|
+|----|----|-----------|
+|expiry|string|Specify a expiry time for the file|
+|meta|mixed|Any additional information. Uses JSON encoding to store the information|
+
+### Expiry
+By specifying 'expiry' as a configuration parameter when writing or updating a file the `PdoAdatper`
+will store the value in a column called 'expiry'. When the information about the file is selected out, if the expiry
+exists and can be parsed by `strtotime`, then the expiry time will be evaluated. False is returned if the file doesn't
+exist or has expired.
+
+The schema for the expiry column can be anything that stores a value that will be evaluated by `strtotime`. Typically 
+this will be a `timestamp` column type.
+
+#### Example
+
+```php
+$config = new Config(['expiry' => date('Y-m-d H:i:s', strtotime('+2 days'))]);
+$adapter->write($path, $content, $config);
+```
+
+The expiry is now part of the file description.
+
+```php
+$data = $adapter->getMetadata($path);
+[
+    'path' => '...',
+    '...',
+    'expiry' => ''
+]
+```
+
+### Additional Metadata
+It's possible to store additional meta data about a file or directory. This could include owner, permissions or groups
+for example. The information is stored as a JSON encoded string in whatever form you provide. One the item is 
+retrieved from the Filesystem the additional meta information is provided in the same format it was originally 
+provided.
+
+#### Example
+```php
+$config = new Config(['meta' => ['owner' => 'John Smith', 'permissions' => 600]]);
+$adapter->write($path, $content, $config);
+```
+
+Those details are now part of the file description.
+
+```php
+$data = $adapter->getMetadata($path);
+[
+    'path' => '...',
+    '...',
+    'meta' => [
+        'owner' => 'John Smith',
+        'permissions' => 600
+    ]
+]
 ```
 
 ## Schema

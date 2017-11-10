@@ -143,7 +143,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
                 return $this->createXMLDataSet($dataSetFile);
             default:
                 $driver = static::$driver;
-                throw new \Exception("Missing dataset for '{$driver}'");
+                throw new \Exception("Missing data set for '{$driver}'");
         }
     }
 
