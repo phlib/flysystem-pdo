@@ -644,21 +644,21 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param int|null $nowTs
+     * @param string|null $now Timestamp in expected format for query
      * @return int Number of expired files deleted
      */
-    public function deleteExpired($nowTs = null)
+    public function deleteExpired($now = null)
     {
-        if ($nowTs === null) {
-            $nowTs = time();
+        if ($now === null) {
+            $now = date('Y-m-d H:i:s');
         }
-        $nowFormatted = date('Y-m-d', (int)$nowTs);
 
-        $select = "SELECT path_id FROM {$this->pathTable} WHERE expired <= :expired";
+        $select = "SELECT path_id FROM {$this->pathTable} WHERE expiry <= :now";
         $stmt = $this->db->prepare($select);
-        $stmt->execute([$nowFormatted]);
+        $stmt->execute(['now' => $now]);
 
-        while (($row = $stmt->fetch()) !== false) {
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        foreach ($rows as $row) {
             $this->deletePath($row['path_id']);
         }
 
@@ -673,7 +673,7 @@ class PdoAdapter implements AdapterInterface
     {
         $delete = "DELETE FROM {$this->pathTable} WHERE path_id = :path_id";
         $stmt   = $this->db->prepare($delete);
-        return (bool)$stmt->execute(['path_id' => $pathId]);
+        return (bool)$stmt->execute(['path_id' => (int)$pathId]);
     }
 
     /**
