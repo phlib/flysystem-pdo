@@ -27,7 +27,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         parent::setUp();
         $this->emptyConfig = new Config();
-        $this->pdo         = $this->getMock(PdoMock::class);
+        $this->pdo         = $this->getMock('\Phlib\Flysystem\Pdo\Tests\PdoMock');
         $this->adapter     = new PdoAdapter($this->pdo);
     }
 
@@ -41,13 +41,13 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function testImplementsAdapterInterface()
     {
-        $this->assertInstanceOf(AdapterInterface::class, $this->adapter);
+        $this->assertInstanceOf('\League\Flysystem\AdapterInterface', $this->adapter);
     }
 
     public function testTablePrefixDefault()
     {
         $default = 'flysystem';
-        $stmt    = $this->getMock(\PDOStatement::class);
+        $stmt    = $this->getMock('\PDOStatement');
         $this->pdo->expects($this->once())
             ->method('prepare')
             ->with($this->stringContains($default))
@@ -60,7 +60,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $prefix = 'myprefix';
         $config = new Config(['table_prefix' => $prefix]);
-        $stmt   = $this->getMock(\PDOStatement::class);
+        $stmt   = $this->getMock('\PDOStatement');
         $this->pdo->expects($this->once())
             ->method('prepare')
             ->with($this->stringContains($prefix))
@@ -74,7 +74,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $default = 'flysystem';
         $prefix  = '';
         $config  = new Config(['table_prefix' => $prefix]);
-        $stmt    = $this->getMock(\PDOStatement::class);
+        $stmt    = $this->getMock('\PDOStatement');
         $this->pdo->expects($this->once())
             ->method('prepare')
             ->with($this->stringContains($default))
@@ -548,6 +548,21 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals($pathId, $meta['path_id']);
     }
 
+    public function testCreateDirWithAdditionalFields()
+    {
+        $pathId = 12345;
+        $this->setupBasicDbResponse();
+        $this->pdo->expects($this->any())
+            ->method('lastInsertId')
+            ->will($this->returnValue($pathId));
+
+        $owner = 'exampleFoo';
+        $meta = $this->adapter->createDir('/path', new Config(['meta' => ['owner' => $owner]]));
+        $this->assertArrayHasKey('meta', $meta);
+        $this->assertArrayHasKey('owner', $meta['meta']);
+        $this->assertEquals($owner, $meta['meta']['owner']);
+    }
+
     public function testCreateDirWithDbFailure()
     {
         $this->setupBasicDbResponse(false);
@@ -693,7 +708,29 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
         $meta           = $this->adapter->getMetadata('/path/file.txt');
         $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp'];
-        $unexpectedKeys = array_diff_key(array_flip($expectedKeys), $meta);
+        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
+        $this->assertEmpty($unexpectedKeys);
+    }
+
+    public function testGetMetadataHasCorrectKeysForFileWithAdditionalFields()
+    {
+        $this->setupDbFetchResponse([
+            'path_id'       => 123,
+            'type'          => 'file',
+            'path'          => '/path/file.txt',
+            'mimetype'      => 'text/plain',
+            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
+            'size'          => 1234,
+            'is_compressed' => false,
+            'update_ts'     => date('Y-m-d H:i:s'),
+            'expiry'        => date('Y-m-d H:i:s', strtotime('+2 days')),
+            'meta'          => json_encode(['owner' => 'exampleFoo']),
+        ]);
+
+        $meta           = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp', 'expiry', 'meta'];
+        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
+
         $this->assertEmpty($unexpectedKeys);
     }
 
@@ -712,7 +749,28 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
         $meta           = $this->adapter->getMetadata('/path/file.txt');
         $expectedKeys   = ['path_id', 'type', 'path', 'timestamp'];
-        $unexpectedKeys = array_diff_key(array_flip($expectedKeys), $meta);
+        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
+        $this->assertEmpty($unexpectedKeys);
+    }
+
+    public function testGetMetadataNormalizesDataForDirectoryWithAdditionalFields()
+    {
+        $this->setupDbFetchResponse([
+            'path_id'       => 123,
+            'type'          => 'dir',
+            'path'          => '/path/file.txt',
+            'mimetype'      => null,
+            'visibility'    => null,
+            'size'          => null,
+            'is_compressed' => 0,
+            'update_ts'     => date('Y-m-d H:i:s'),
+            'expiry'        => date('Y-m-d H:i:s', strtotime('+2 days')),
+            'meta'          => json_encode(['owner' => 'exampleFoo']),
+        ]);
+
+        $meta           = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys   = ['path_id', 'type', 'path', 'timestamp', 'expiry', 'meta'];
+        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
         $this->assertEmpty($unexpectedKeys);
     }
 
@@ -769,7 +827,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     protected function setupBasicDbResponse($response = true)
     {
-        $stmt = $this->getMock(\PDOStatement::class);
+        $stmt = $this->getMock('\PDOStatement');
         $stmt->expects($this->any())
             ->method('execute')
             ->will($this->returnValue($response));
@@ -793,7 +851,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function setupDbMultiCall($calls)
     {
-        $stmt = $this->getMock(\PDOStatement::class);
+        $stmt = $this->getMock('\PDOStatement');
         $stmt->expects($this->any())
             ->method('execute')
             ->will($this->returnValue(true));
