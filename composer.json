@@ -4,8 +4,11 @@
     "license": "LGPL-3.0",
     "authors": [
         {
-            "name": "Luke Richards",
-            "email": "luke.richards@emailcenteruk.com"
+            "name": "Luke Richards"
+        },
+        {
+            "name": "Phlib Team & Contributors",
+            "homepage": "https://github.com/phlib/flysystem-pdo/contributors"
         }
     ],
     "require": {
