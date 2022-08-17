@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <phpunit bootstrap="vendor/autoload.php" colors="true">
-
     <php>
-        <!--<var name="PDO_DSN" value="mysql:host=127.0.0.1;dbname=test" />-->
-        <!--<var name="PDO_USER" value="root" />-->
-        <!--<var name="PDO_PASS" value="" />-->
-        <!--<var name="PDO_DBNAME" value="FlysystemPdo" />-->
+        <env name="INTEGRATION_ENABLED" value="0" />
+        <env name="DB_HOST" value="127.0.0.1" />
+        <env name="DB_PORT" value="3306" />
+        <env name="DB_USERNAME" value="" />
+        <env name="DB_PASSWORD" value="" />
+        <env name="DB_DATABASE" value="test" />
     </php>
-
     <testsuites>
         <testsuite name="FlysystemPdo Test Suite">
             <directory>tests</directory>
