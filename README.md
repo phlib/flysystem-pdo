@@ -1,9 +1,9 @@
 # phlib/flysystem-pdo
 
-[![Build Status](https://img.shields.io/travis/phlib/flysystem-pdo/master.svg)](https://travis-ci.org/phlib/flysystem-pdo)
-[![Codecov](https://img.shields.io/codecov/c/github/phlib/flysystem-pdo.svg)](https://codecov.io/gh/phlib/flysystem-pdo)
-[![Latest Stable Version](https://img.shields.io/packagist/v/phlib/flysystem-pdo.svg)](https://packagist.org/packages/phlib/flysystem-pdo)
-[![Total Downloads](https://img.shields.io/packagist/dt/phlib/flysystem-pdo.svg)](https://packagist.org/packages/phlib/flysystem-pdo)
+[![Code Checks](https://img.shields.io/github/workflow/status/phlib/flysystem-pdo/CodeChecks?logo=github)](https://github.com/phlib/flysystem-pdo/actions/workflows/code-checks.yml)
+[![Codecov](https://img.shields.io/codecov/c/github/phlib/flysystem-pdo.svg?logo=codecov)](https://codecov.io/gh/phlib/flysystem-pdo)
+[![Latest Stable Version](https://img.shields.io/packagist/v/phlib/flysystem-pdo.svg?logo=packagist)](https://packagist.org/packages/phlib/flysystem-pdo)
+[![Total Downloads](https://img.shields.io/packagist/dt/phlib/flysystem-pdo.svg?logo=packagist)](https://packagist.org/packages/phlib/flysystem-pdo)
 ![Licence](https://img.shields.io/github/license/phlib/flysystem-pdo.svg)
 
 This is a [PDO](http://php.net/manual/en/class.pdo.php) Adapter for the Leagues [Flysystem](http://php.net/manual/en/class.pdo.php).
