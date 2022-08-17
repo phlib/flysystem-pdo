@@ -19,9 +19,35 @@ jobs:
 
     name: PHP ${{ matrix.php }} tests
 
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USERNAME: admin
+      DB_PASSWORD: adminpass
+      DB_DATABASE: test
+      DB_ROOT_USERNAME: root
+      DB_ROOT_PASSWORD: rootpass
+
+    services:
+      mysql:
+        image: mysql:5.7
+        env:
+          MYSQL_DATABASE: ${{ env.DB_DATABASE }}
+          MYSQL_HOST: ${{ env.DB_HOST }}
+          MYSQL_USER: ${{ env.DB_USERNAME }}
+          MYSQL_PASSWORD: ${{ env.DB_PASSWORD }}
+          MYSQL_ROOT_PASSWORD: ${{ env.DB_ROOT_PASSWORD }}
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+
+      - name: Set up MySQL
+        run: |
+          mysql -h${{ env.DB_HOST }} -P${{ env.DB_PORT }} -u${{ env.DB_ROOT_USERNAME }} -p${{ env.DB_ROOT_PASSWORD }} ${{ env.DB_DATABASE }} < schema/mysql.sql
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -43,6 +69,8 @@ jobs:
 
       - name: PHPUnit
         run: vendor/bin/phpunit --coverage-clover=coverage.xml
+        env:
+          INTEGRATION_ENABLED: 1
 
       - name: "Upload coverage to Codecov"
         uses: "codecov/codecov-action@v2"
