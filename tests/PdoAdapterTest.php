@@ -397,15 +397,15 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             'mimetype'   => 'text/plain'
         ]);
 
-        $meta = $this->adapter->rename($path, $newName);
-        $this->assertEquals($newName, $meta['path']);
+        $actual = $this->adapter->rename($path, $newName);
+        $this->assertTrue($actual);
     }
 
     public function testRenameWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
-        $meta = $this->adapter->rename('/the-old-name.asp', '/the-new-name.php');
-        $this->assertFalse($meta);
+        $actual = $this->adapter->rename('/the-old-name.asp', '/the-new-name.php');
+        $this->assertFalse($actual);
     }
 
     public function testRenameDirectory(): void
@@ -437,8 +437,8 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             ]
         ]);
 
-        $meta = $this->adapter->rename($path, $newName);
-        $this->assertEquals($newName, $meta['path']);
+        $actual = $this->adapter->rename($path, $newName);
+        $this->assertTrue($actual);
     }
 
     public function testCopy(): void
@@ -459,8 +459,8 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             ->method('lastInsertId')
             ->willReturn(rand(1, 1000));
 
-        $meta = $this->adapter->copy($path, $newpath);
-        $this->assertEquals($meta['path'], $newpath);
+        $actual = $this->adapter->copy($path, $newpath);
+        $this->assertTrue($actual);
     }
 
     public function testCopyFailsToFindPath(): void
@@ -469,32 +469,8 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $newpath = '/the-new-name.txt';
         $this->setupBasicDbResponse(false);
 
-        $meta = $this->adapter->copy($path, $newpath);
-        $this->assertFalse($meta);
-    }
-
-    public function testCopyDoesntCopyModifiedTime(): void
-    {
-        $time    = strtotime('yesterday');
-        $path    = '/the-old-name.txt';
-        $newpath = '/the-new-name.txt';
-        $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'path'          => $path,
-            'type'          => 'file',
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 2341,
-            'is_compressed' => 1,
-            'update_ts'     => date('Y-m-d H:i:s', $time)
-        ]);
-
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn(rand(1, 1000));
-
-        $meta = $this->adapter->copy($path, $newpath);
-        $this->assertGreaterThan($time, $meta['timestamp']);
+        $actual = $this->adapter->copy($path, $newpath);
+        $this->assertFalse($actual);
     }
 
     public function testDelete(): void

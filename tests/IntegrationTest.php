@@ -275,15 +275,15 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     {
         $origPath = '/path/to/file.txt';
         $content  = file_get_contents(static::$tempFiles['10B']);
-        $origMeta = $this->adapter->write($origPath, $content, $this->emptyConfig);
+        $this->adapter->write($origPath, $content, $this->emptyConfig);
 
         $copyPath = '/path/to/copy.txt';
-        $copyMeta = $this->adapter->copy($origPath, $copyPath);
+        $this->adapter->copy($origPath, $copyPath);
 
         $connection  = $this->getConnection();
-        $select      = 'SELECT type, path, mimetype, visibility, size, is_compressed FROM flysystem_path WHERE path_id = %d';
-        $origDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, [$origMeta['path_id']]));
-        $copyDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, [$copyMeta['path_id']]));
+        $select      = 'SELECT type, mimetype, visibility, size, is_compressed FROM flysystem_path WHERE path = "%s"';
+        $origDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, $origPath));
+        $copyDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, $copyPath));
 
         $this->assertTablesEqual($origDataSet, $copyDataSet);
     }
@@ -292,15 +292,16 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     {
         $origPath = '/path/to/file.txt';
         $content  = file_get_contents(static::$tempFiles['10B']);
-        $origMeta = $this->adapter->write($origPath, $content, $this->emptyConfig);
+        $uncompressedConfig = new Config(['enable_compression' => false]);
+        $this->adapter->write($origPath, $content, $uncompressedConfig);
 
         $copyPath = '/path/to/copy.txt';
-        $copyMeta = $this->adapter->copy($origPath, $copyPath);
+        $this->adapter->copy($origPath, $copyPath);
 
         $connection  = $this->getConnection();
-        $select      = 'SELECT chunk_no, content FROM flysystem_chunk WHERE path_id = %d';
-        $origDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, [$origMeta['path_id']]));
-        $copyDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, [$copyMeta['path_id']]));
+        $select      = 'SELECT chunk_no, content FROM flysystem_chunk JOIN flysystem_path USING (path_id) WHERE path = "%s"';
+        $origDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, $origPath));
+        $copyDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, $copyPath));
 
         $this->assertTablesEqual($origDataSet, $copyDataSet);
     }

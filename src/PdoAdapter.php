@@ -200,10 +200,9 @@ class PdoAdapter implements AdapterInterface
 
     /**
      * @param string $path
-     * @param string $newPath
-     * @return array|false @todo Should be bool for interface
+     * @param string $newpath
      */
-    public function rename($path, $newPath)
+    public function rename($path, $newpath): bool
     {
         $data = $this->findPathData($path);
         if (!is_array($data)) {
@@ -214,7 +213,7 @@ class PdoAdapter implements AdapterInterface
         $stmt   = $this->db->prepare($update);
 
         // rename the primary node first
-        if (!$stmt->execute(['newpath' => $newPath, 'path_id' => $data['path_id']])) {
+        if (!$stmt->execute(['newpath' => $newpath, 'path_id' => $data['path_id']])) {
             return false;
         }
 
@@ -223,21 +222,19 @@ class PdoAdapter implements AdapterInterface
             $pathLength = strlen($path);
             $listing    = $this->listContents($path, true);
             foreach ($listing as $item) {
-                $newItemPath = $newPath . substr($item['path'], $pathLength);
+                $newItemPath = $newpath . substr($item['path'], $pathLength);
                 $stmt->execute(['newpath' => $newItemPath, 'path_id' => $item['path_id']]);
             }
         }
 
-        $data['path'] = $newPath;
-        return $this->normalizeMetadata($data);
+        return true;
     }
 
     /**
      * @param string $path
-     * @param string $newPath
-     * @return array|false @todo Should be bool for interface
+     * @param string $newpath
      */
-    public function copy($path, $newPath)
+    public function copy($path, $newpath): bool
     {
         $data = $this->findPathData($path);
         if (!is_array($data)) {
@@ -245,7 +242,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $newData = $data;
-        $newData['path'] = $newPath;
+        $newData['path'] = $newpath;
         unset($newData['path_id']);
         unset($newData['update_ts']);
 
@@ -266,8 +263,7 @@ class PdoAdapter implements AdapterInterface
             $this->cleanupTemp($resource, '');
         }
 
-        $newData['update_ts'] = date('Y-m-d H:i:s');
-        return $this->normalizeMetadata($newData);
+        return true;
     }
 
     /**
