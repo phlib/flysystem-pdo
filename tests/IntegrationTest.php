@@ -49,14 +49,24 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     public static function setUpBeforeClass()
     {
         parent::setUpBeforeClass();
-        if (!isset($GLOBALS['PDO_DSN']) || !isset($GLOBALS['PDO_USER']) || !isset($GLOBALS['PDO_PASS']) || !isset($GLOBALS['PDO_DBNAME'])) {
-            // insufficient values to work with
+        if (!getenv('INTEGRATION_ENABLED')) {
+            // Integration test not enabled
             return;
         }
 
-        $dsn            = $GLOBALS['PDO_DSN'];
-        static::$driver = substr($dsn, 0, strpos($dsn, ':'));
-        static::$pdo    = new \PDO($dsn, $GLOBALS['PDO_USER'], $GLOBALS['PDO_PASS']);
+        // @todo allow tests to use alternative to MySQL
+        $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
+        static::$driver = 'mysql';
+        static::$pdo = new \PDO(
+            $dsn,
+            getenv('DB_USERNAME'),
+            getenv('DB_PASSWORD'),
+            [
+                \PDO::ATTR_TIMEOUT => 2,
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            ]
+        );
 
         // create files
         $tmpDir             = sys_get_temp_dir() . DIRECTORY_SEPARATOR;
@@ -124,7 +134,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
      */
     public function getConnection()
     {
-        return $this->createDefaultDBConnection(static::$pdo, $GLOBALS['PDO_DBNAME']);
+        return $this->createDefaultDBConnection(static::$pdo, getenv('DB_DATABASE'));
     }
 
     /**
