@@ -257,8 +257,8 @@ class PdoAdapter implements AdapterInterface
             $data['mimetype'],
             $data['size'],
             $data['is_compressed'],
-            isset($data['expiry']) ? $data['expiry'] : null,
-            isset($data['meta']) ? $data['meta'] : null
+            $data['expiry'] ?? null,
+            $data['meta'] ?? null
         );
 
         if ($newData['type'] == 'file') {

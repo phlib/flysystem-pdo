@@ -146,10 +146,10 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     {
         switch (static::$driver) {
             case 'mysql':
-                $dataSetFile = dirname(__FILE__) . '/_files/mysql-integration.xml';
+                $dataSetFile = __DIR__ . '/_files/mysql-integration.xml';
                 return $this->createMySQLXMLDataSet($dataSetFile);
             case 'sqlite':
-                $dataSetFile = dirname(__FILE__) . '/_files/sqlite-integration.xml';
+                $dataSetFile = __DIR__ . '/_files/sqlite-integration.xml';
                 return $this->createXMLDataSet($dataSetFile);
             default:
                 $driver = static::$driver;
