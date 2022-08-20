@@ -2,9 +2,9 @@
 
 namespace Phlib\Flysystem\Pdo\Tests;
 
-use Phlib\Flysystem\Pdo\PdoAdapter;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
+use Phlib\Flysystem\Pdo\PdoAdapter;
 
 class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 {
@@ -27,14 +27,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         parent::setUp();
         $this->emptyConfig = new Config();
-        $this->pdo         = $this->getMock(PdoMock::class);
-        $this->adapter     = new PdoAdapter($this->pdo);
+        $this->pdo = $this->getMock(PdoMock::class);
+        $this->adapter = new PdoAdapter($this->pdo);
     }
 
     public function tearDown(): void
     {
-        $this->adapter     = null;
-        $this->pdo         = null;
+        $this->adapter = null;
+        $this->pdo = null;
         $this->emptyConfig = null;
         parent::tearDown();
     }
@@ -47,7 +47,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     public function testTablePrefixDefault(): void
     {
         $default = 'flysystem';
-        $stmt    = $this->getMock(\PDOStatement::class);
+        $stmt = $this->getMock(\PDOStatement::class);
         $this->pdo->expects($this->once())
             ->method('prepare')
             ->with($this->stringContains($default))
@@ -59,8 +59,10 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     public function testTablePrefixConfigurationIsHonored(): void
     {
         $prefix = 'myprefix';
-        $config = new Config(['table_prefix' => $prefix]);
-        $stmt   = $this->getMock(\PDOStatement::class);
+        $config = new Config([
+            'table_prefix' => $prefix,
+        ]);
+        $stmt = $this->getMock(\PDOStatement::class);
         $this->pdo->expects($this->once())
             ->method('prepare')
             ->with($this->stringContains($prefix))
@@ -72,9 +74,11 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     public function testTablePrefixConfigurationWithBlankValue(): void
     {
         $default = 'flysystem';
-        $prefix  = '';
-        $config  = new Config(['table_prefix' => $prefix]);
-        $stmt    = $this->getMock(\PDOStatement::class);
+        $prefix = '';
+        $config = new Config([
+            'table_prefix' => $prefix,
+        ]);
+        $stmt = $this->getMock(\PDOStatement::class);
         $this->pdo->expects($this->once())
             ->method('prepare')
             ->with($this->stringContains($default))
@@ -93,19 +97,19 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             ->method('lastInsertId')
             ->willReturn($pathId);
 
-        $path    = '/some/path/to/file.txt';
+        $path = '/some/path/to/file.txt';
         $content = 'Test Content';
-        $meta    = $this->adapter
+        $meta = $this->adapter
             ->write($path, $content, $this->emptyConfig);
 
         $expected = [
-            'type'       => 'file',
-            'path'       => $path,
+            'type' => 'file',
+            'path' => $path,
             'visibility' => 'public',
-            'size'       => strlen($content),
-            'timestamp'  => time(), // this is going to bite me in the arse!
-            'path_id'    => $pathId,
-            'mimetype'   => 'text/plain'
+            'size' => strlen($content),
+            'timestamp' => time(), // this is going to bite me in the arse!
+            'path_id' => $pathId,
+            'mimetype' => 'text/plain',
         ];
         $this->assertEquals($expected, $meta);
     }
@@ -161,20 +165,20 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             ->method('lastInsertId')
             ->willReturn($pathId);
 
-        $path    = '/some/path/to/file.txt';
+        $path = '/some/path/to/file.txt';
         $content = 'Test File';
-        $handle  = $this->createTempResource($content);
-        $meta    = $this->adapter
+        $handle = $this->createTempResource($content);
+        $meta = $this->adapter
             ->writeStream($path, $handle, $this->emptyConfig);
 
         $expected = [
-            'type'       => 'file',
-            'path'       => $path,
+            'type' => 'file',
+            'path' => $path,
             'visibility' => 'public',
-            'size'       => strlen($content),
-            'timestamp'  => time(), // this is going to bite me in the arse!
-            'path_id'    => $pathId,
-            'mimetype'   => 'text/plain'
+            'size' => strlen($content),
+            'timestamp' => time(), // this is going to bite me in the arse!
+            'path_id' => $pathId,
+            'mimetype' => 'text/plain',
         ];
         $this->assertEquals($expected, $meta);
     }
@@ -195,7 +199,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             ->willReturn(rand(1, 1000));
 
         $handle = $this->createTempResource();
-        $meta   = $this->adapter
+        $meta = $this->adapter
             ->writeStream(
                 '/example.json',
                 $handle,
@@ -217,8 +221,8 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             ->willReturn(rand(1, 1000));
 
         $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='); // 1x1 transparent gif
-        $handle  = $this->createTempResource($content);
-        $meta    = $this->adapter
+        $handle = $this->createTempResource($content);
+        $meta = $this->adapter
             ->writeStream(
                 '/missing-extension',
                 $handle,
@@ -230,17 +234,17 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function testUpdate(): void
     {
-        $path    = '/some/path/to/file.txt';
+        $path = '/some/path/to/file.txt';
         $content = 'Test Content';
-        $data    = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+        $data = [
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -264,14 +268,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/example.json';
         $data = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -285,14 +289,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/missing-extension';
         $data = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -308,17 +312,17 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function testUpdateToStream(): void
     {
-        $path    = '/some/path/to/file.txt';
+        $path = '/some/path/to/file.txt';
         $content = 'Test Content';
-        $data    = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+        $data = [
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -342,19 +346,19 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/example.json';
         $data = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
         $handle = $this->createTempResource();
-        $meta   = $this->adapter
+        $meta = $this->adapter
             ->updateStream($path, $handle, $this->emptyConfig);
 
         $this->assertEquals('application/json', $meta['mimetype']);
@@ -364,20 +368,20 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/missing-extension';
         $data = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
         $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='); // 1x1 transparent gif
-        $handle  = $this->createTempResource($content);
-        $meta    = $this->adapter
+        $handle = $this->createTempResource($content);
+        $meta = $this->adapter
             ->updateStream($path, $handle, $this->emptyConfig);
 
         $this->assertNotEquals('image/gif', $meta['mimetype']);
@@ -385,16 +389,16 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function testRenameFile(): void
     {
-        $path    = '/the-old-name.asp';
+        $path = '/the-old-name.asp';
         $newName = '/the-new-name.php';
         $this->setupDbFetchResponse([
-            'path_id'    => 123,
-            'path'       => $path,
-            'type'       => 'file',
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
             'visibility' => 'public',
-            'size'       => 2341,
-            'update_ts'  => date('Y-m-d H:i:s'),
-            'mimetype'   => 'text/plain'
+            'size' => 2341,
+            'update_ts' => date('Y-m-d H:i:s'),
+            'mimetype' => 'text/plain',
         ]);
 
         $actual = $this->adapter->rename($path, $newName);
@@ -410,31 +414,31 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function testRenameDirectory(): void
     {
-        $path    = '/the-old-name';
+        $path = '/the-old-name';
         $newName = '/the-new-name';
         $this->setupDbMultiCall([
             [
                 'method' => 'fetch',
                 'response' => [
-                    'path_id'    => 123,
-                    'path'       => $path,
-                    'type'       => 'dir',
-                    'update_ts'  => date('Y-m-d H:i:s')
-                ]
+                    'path_id' => 123,
+                    'path' => $path,
+                    'type' => 'dir',
+                    'update_ts' => date('Y-m-d H:i:s'),
+                ],
             ], [
                 'method' => 'fetchAll',
                 'response' => [
                     [
-                        'path_id'    => 1234,
-                        'path'       => $path . '/somefile.txt',
-                        'type'       => 'file',
+                        'path_id' => 1234,
+                        'path' => $path . '/somefile.txt',
+                        'type' => 'file',
                         'visibility' => 'public',
-                        'size'       => 2341,
-                        'update_ts'  => date('Y-m-d H:i:s'),
-                        'mimetype'   => 'text/plain'
-                    ]
-                ]
-            ]
+                        'size' => 2341,
+                        'update_ts' => date('Y-m-d H:i:s'),
+                        'mimetype' => 'text/plain',
+                    ],
+                ],
+            ],
         ]);
 
         $actual = $this->adapter->rename($path, $newName);
@@ -443,17 +447,17 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function testCopy(): void
     {
-        $path    = '/the-old-name.txt';
+        $path = '/the-old-name.txt';
         $newpath = '/the-new-name.txt';
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'path'          => $path,
-            'type'          => 'file',
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 2341,
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 2341,
             'is_compressed' => 1,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
@@ -465,7 +469,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function testCopyFailsToFindPath(): void
     {
-        $path    = '/the-old-name.txt';
+        $path = '/the-old-name.txt';
         $newpath = '/the-new-name.txt';
         $this->setupBasicDbResponse(false);
 
@@ -475,13 +479,19 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function testDelete(): void
     {
-        $this->setupDbFetchResponse(['type' => 'file', 'path_id' => 123]);
+        $this->setupDbFetchResponse([
+            'type' => 'file',
+            'path_id' => 123,
+        ]);
         $this->assertTrue($this->adapter->delete('/some-file.txt'));
     }
 
     public function testDeleteWithNonFilePath(): void
     {
-        $this->setupDbFetchResponse(['type' => 'dir', 'path_id' => 123]);
+        $this->setupDbFetchResponse([
+            'type' => 'dir',
+            'path_id' => 123,
+        ]);
         $this->assertFalse($this->adapter->delete('/some-file.txt'));
     }
 
@@ -495,12 +505,15 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $this->setupDbMultiCall([
             [
-                'method'   => 'fetch',
-                'response' => ['type' => 'dir', 'path_id' => 123]
+                'method' => 'fetch',
+                'response' => [
+                    'type' => 'dir',
+                    'path_id' => 123,
+                ],
             ], [
-                'method'   => 'fetchAll',
-                'response' => []
-            ]
+                'method' => 'fetchAll',
+                'response' => [],
+            ],
         ]);
         $this->assertTrue($this->adapter->deleteDir('/some-directory'));
     }
@@ -509,34 +522,37 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $this->setupDbMultiCall([
             [
-                'method'   => 'fetch',
+                'method' => 'fetch',
                 'response' => [
-                    'type'      => 'dir',
-                    'path_id'   => 123,
-                    'path'      => '/path/to',
-                    'update_ts' => date('Y-m-d H:i:s')
-                ]
+                    'type' => 'dir',
+                    'path_id' => 123,
+                    'path' => '/path/to',
+                    'update_ts' => date('Y-m-d H:i:s'),
+                ],
             ], [
-                'method'   => 'fetchAll',
+                'method' => 'fetchAll',
                 'response' => [
                     [
-                        'type'       => 'file',
-                        'path_id'    => 321,
-                        'path'       => '/path/to/file.txt',
-                        'mimetype'   => 'text/plain',
+                        'type' => 'file',
+                        'path_id' => 321,
+                        'path' => '/path/to/file.txt',
+                        'mimetype' => 'text/plain',
                         'visibility' => 'public',
-                        'size'       => 1234,
-                        'update_ts'  => date('Y-m-d H:i:s')
-                    ]
-                ]
-            ]
+                        'size' => 1234,
+                        'update_ts' => date('Y-m-d H:i:s'),
+                    ],
+                ],
+            ],
         ]);
         $this->assertTrue($this->adapter->deleteDir('/some-directory'));
     }
 
     public function testDeleteDirWithNonDirectoryPath(): void
     {
-        $this->setupDbFetchResponse(['type' => 'file', 'path_id' => 123]);
+        $this->setupDbFetchResponse([
+            'type' => 'file',
+            'path_id' => 123,
+        ]);
         $this->assertFalse($this->adapter->deleteDir('/some-file.txt'));
     }
 
@@ -567,7 +583,11 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             ->will($this->returnValue($pathId));
 
         $owner = 'exampleFoo';
-        $meta = $this->adapter->createDir('/path', new Config(['meta' => ['owner' => $owner]]));
+        $meta = $this->adapter->createDir('/path', new Config([
+            'meta' => [
+                'owner' => $owner,
+            ],
+        ]));
         $this->assertArrayHasKey('meta', $meta);
         $this->assertArrayHasKey('owner', $meta['meta']);
         $this->assertEquals($owner, $meta['meta']['owner']);
@@ -584,13 +604,13 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/path/to/file.txt';
         $this->setupDbFetchResponse([
-            'path_id'    => 123,
-            'path'       => $path,
-            'type'       => 'file',
-            'mimetype'   => 'text/plain',
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
             'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'       => 1234,
-            'update_ts'  => date('Y-m-d H:i:s')
+            'size' => 1234,
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
         $meta = $this->adapter
             ->setVisibility('/path/to/file.txt', AdapterInterface::VISIBILITY_PRIVATE);
@@ -624,14 +644,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/path/to/file.txt';
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'path'          => $path,
-            'type'          => 'file',
-            'mimetype'      => 'text/plain',
-            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'          => 1234,
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => 1234,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
         $meta = $this->adapter->read($path);
         $this->assertArrayHasKey('contents', $meta);
@@ -648,14 +668,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $path = '/path/to/file.txt';
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'path'          => $path,
-            'type'          => 'file',
-            'mimetype'      => 'text/plain',
-            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'          => 1234,
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => 1234,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
         $meta = $this->adapter->readStream($path);
         $this->assertTrue(is_resource($meta['stream']));
@@ -673,15 +693,15 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->setupDbFetchResponse(
             [
                 [
-                    'path_id'       => 123,
-                    'path'          => '/path/file.txt',
-                    'type'          => 'file',
-                    'mimetype'      => 'text/plain',
-                    'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-                    'size'          => 1234,
+                    'path_id' => 123,
+                    'path' => '/path/file.txt',
+                    'type' => 'file',
+                    'mimetype' => 'text/plain',
+                    'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+                    'size' => 1234,
                     'is_compressed' => false,
-                    'update_ts'     => date('Y-m-d H:i:s')
-                ]
+                    'update_ts' => date('Y-m-d H:i:s'),
+                ],
             ],
             'fetchAll'
         );
@@ -706,18 +726,18 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     public function testGetMetadataHasCorrectKeysForFile(): void
     {
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => '/path/file.txt',
-            'mimetype'      => 'text/plain',
-            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'          => 1234,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => '/path/file.txt',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => 1234,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
 
-        $meta           = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp'];
+        $meta = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
         $this->assertEmpty($unexpectedKeys);
     }
@@ -725,20 +745,22 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     public function testGetMetadataHasCorrectKeysForFileWithAdditionalFields(): void
     {
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => '/path/file.txt',
-            'mimetype'      => 'text/plain',
-            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'          => 1234,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => '/path/file.txt',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => 1234,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
-            'expiry'        => date('Y-m-d H:i:s', strtotime('+2 days')),
-            'meta'          => json_encode(['owner' => 'exampleFoo']),
+            'update_ts' => date('Y-m-d H:i:s'),
+            'expiry' => date('Y-m-d H:i:s', strtotime('+2 days')),
+            'meta' => json_encode([
+                'owner' => 'exampleFoo',
+            ]),
         ]);
 
-        $meta           = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp', 'expiry', 'meta'];
+        $meta = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp', 'expiry', 'meta'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
 
         $this->assertEmpty($unexpectedKeys);
@@ -747,18 +769,18 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     public function testGetMetadataNormalizesDataForDirectory(): void
     {
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'type'          => 'dir',
-            'path'          => '/path/file.txt',
-            'mimetype'      => null,
-            'visibility'    => null,
-            'size'          => null,
+            'path_id' => 123,
+            'type' => 'dir',
+            'path' => '/path/file.txt',
+            'mimetype' => null,
+            'visibility' => null,
+            'size' => null,
             'is_compressed' => 0,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
 
-        $meta           = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'timestamp'];
+        $meta = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys = ['path_id', 'type', 'path', 'timestamp'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
         $this->assertEmpty($unexpectedKeys);
     }
@@ -766,20 +788,22 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     public function testGetMetadataNormalizesDataForDirectoryWithAdditionalFields(): void
     {
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'type'          => 'dir',
-            'path'          => '/path/file.txt',
-            'mimetype'      => null,
-            'visibility'    => null,
-            'size'          => null,
+            'path_id' => 123,
+            'type' => 'dir',
+            'path' => '/path/file.txt',
+            'mimetype' => null,
+            'visibility' => null,
+            'size' => null,
             'is_compressed' => 0,
-            'update_ts'     => date('Y-m-d H:i:s'),
-            'expiry'        => date('Y-m-d H:i:s', strtotime('+2 days')),
-            'meta'          => json_encode(['owner' => 'exampleFoo']),
+            'update_ts' => date('Y-m-d H:i:s'),
+            'expiry' => date('Y-m-d H:i:s', strtotime('+2 days')),
+            'meta' => json_encode([
+                'owner' => 'exampleFoo',
+            ]),
         ]);
 
-        $meta           = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'timestamp', 'expiry', 'meta'];
+        $meta = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys = ['path_id', 'type', 'path', 'timestamp', 'expiry', 'meta'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
         $this->assertEmpty($unexpectedKeys);
     }
@@ -798,30 +822,30 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $method = 'get' . ucfirst($attribute);
         $this->setupDbFetchResponse($rowData);
-        $this->assertEquals($expectValue, $this->adapter->$method($rowData['path'])[$attribute]);
+        $this->assertEquals($expectValue, $this->adapter->{$method}($rowData['path'])[$attribute]);
     }
 
     public function individualAttributeGetMethodsDataProvider(): array
     {
-        $size       = 1234;
-        $mimetype   = 'text/plain';
-        $timestamp  = time();
+        $size = 1234;
+        $mimetype = 'text/plain';
+        $timestamp = time();
         $visibility = AdapterInterface::VISIBILITY_PUBLIC;
-        $rowData    = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => '/path/file.txt',
-            'mimetype'      => $mimetype,
-            'visibility'    => $visibility,
-            'size'          => $size,
+        $rowData = [
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => '/path/file.txt',
+            'mimetype' => $mimetype,
+            'visibility' => $visibility,
+            'size' => $size,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s', $timestamp)
+            'update_ts' => date('Y-m-d H:i:s', $timestamp),
         ];
         return [
             [$rowData, 'size', $size],
             [$rowData, 'mimetype', $mimetype],
             [$rowData, 'timestamp', $timestamp],
-            [$rowData, 'visibility', $visibility]
+            [$rowData, 'visibility', $visibility],
         ];
     }
 
@@ -861,9 +885,9 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         return $this->setupDbMultiCall([
             [
-                'method'   => $method,
-                'response' => $response
-            ]
+                'method' => $method,
+                'response' => $response,
+            ],
         ]);
     }
 

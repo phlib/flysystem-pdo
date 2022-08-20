@@ -40,11 +40,11 @@ trait MemoryTestTrait
 
         $initial = memory_get_peak_usage();
         $unit();
-        $final   = memory_get_peak_usage();
+        $final = memory_get_peak_usage();
 
         $difference = $final - $initial;
 
-        $variationInMeg  = round($variation / 1024 / 1024) . 'M';
+        $variationInMeg = round($variation / 1024 / 1024) . 'M';
         $differenceInMeg = round(($difference - $variation) / 1024 / 1024, 1) . 'M';
         $message = "The memory was exceeded by '{$differenceInMeg}' above the '{$variationInMeg}' variation limit.";
         $this->assertLessThanOrEqual($variation, $difference, $message);
