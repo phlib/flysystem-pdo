@@ -28,11 +28,6 @@ class PdoAdapter implements AdapterInterface
      */
     protected $chunkTable;
 
-    /**
-     * PdoAdapter constructor.
-     * @param \PDO $db
-     * @param Config $config
-     */
     public function __construct(\PDO $db, Config $config = null)
     {
         $this->db = $db;
@@ -63,7 +58,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @param string $contents
+     * @return array|false false on failure file meta data on success
      */
     public function write($path, $contents, Config $config)
     {
@@ -74,7 +71,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string   $path
+     * @param resource $resource
+     * @return array|false false on failure file meta data on success
      */
     public function writeStream($path, $resource, Config $config)
     {
@@ -85,14 +84,10 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param string $path
-     * @param string $filename
-     * @param string $contents
      * @param resource $resource
-     * @param Config $config
      * @return array|false
      */
-    protected function doWrite($path, $filename, $contents, $resource, Config $config)
+    protected function doWrite(string $path, string $filename, string $contents, $resource, Config $config)
     {
         $enableCompression = (bool)$config->get('enable_compression', $this->config->get('enable_compression'));
         $data              = [
@@ -135,7 +130,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @param string $contents
+     * @return array|false false on failure file meta data on success
      */
     public function update($path, $contents, Config $config)
     {
@@ -146,7 +143,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string   $path
+     * @param resource $resource
+     * @return array|false false on failure file meta data on success
      */
     public function updateStream($path, $resource, Config $config)
     {
@@ -157,14 +156,10 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param string $path
-     * @param string $filename
-     * @param string $contents
      * @param resource $resource
-     * @param Config $config
      * @return array|false
      */
-    protected function doUpdate($path, $filename, $contents, $resource, Config $config)
+    protected function doUpdate(string $path, string $filename, string $contents, $resource, Config $config)
     {
         $data = $this->findPathData($path);
         if (!is_array($data) || $data['type'] != 'file') {
@@ -204,7 +199,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @param string $newPath
+     * @return array|false @todo Should be bool for interface
      */
     public function rename($path, $newPath)
     {
@@ -236,7 +233,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @param string $newPath
+     * @return array|false @todo Should be bool for interface
      */
     public function copy($path, $newPath)
     {
@@ -272,9 +271,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
      */
-    public function delete($path)
+    public function delete($path): bool
     {
         $data = $this->findPathData($path);
         if (!is_array($data) || $data['type'] != 'file') {
@@ -290,9 +289,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $dirname
      */
-    public function deleteDir($dirname)
+    public function deleteDir($dirname): bool
     {
         $data = $this->findPathData($dirname);
         if (!is_array($data) || $data['type'] != 'dir') {
@@ -312,7 +311,8 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $dirname directory name
+     * @return array|false
      */
     public function createDir($dirname, Config $config)
     {
@@ -338,7 +338,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @param string $visibility
+     * @return array|false file meta data
      */
     public function setVisibility($path, $visibility)
     {
@@ -353,9 +355,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
      */
-    public function has($path)
+    public function has($path): bool
     {
         $select = "SELECT 1 FROM {$this->pathTable} WHERE path = :path LIMIT 1";
         $stmt   = $this->db->prepare($select);
@@ -367,7 +369,8 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @return array|false
      */
     public function read($path)
     {
@@ -387,7 +390,8 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @return array|false
      */
     public function readStream($path)
     {
@@ -402,11 +406,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param int $pathId
-     * @param bool $isCompressed
      * @return resource
      */
-    protected function getChunkResource($pathId, $isCompressed)
+    protected function getChunkResource(int $pathId, bool $isCompressed)
     {
         $resource = fopen('php://temp', 'w+b');
         $compressFilter = null;
@@ -424,10 +426,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param int $pathId
      * @param resource $resource
      */
-    protected function extractChunks($pathId, $resource)
+    protected function extractChunks(int $pathId, $resource)
     {
         $select = "SELECT content FROM {$this->chunkTable} WHERE path_id = :path_id ORDER BY chunk_no ASC";
         $stmt   = $this->db->prepare($select);
@@ -444,9 +445,10 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $directory
+     * @param bool   $recursive
      */
-    public function listContents($directory = '', $recursive = false)
+    public function listContents($directory = '', $recursive = false): array
     {
         $params = [];
         $select = "SELECT * FROM {$this->pathTable}";
@@ -470,7 +472,8 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @return array|false
      */
     public function getMetadata($path)
     {
@@ -478,7 +481,8 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @return array|false
      */
     public function getSize($path)
     {
@@ -486,7 +490,8 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @return array|false
      */
     public function getMimetype($path)
     {
@@ -494,7 +499,8 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @return array|false
      */
     public function getTimestamp($path)
     {
@@ -502,7 +508,8 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @inheritdoc
+     * @param string $path
+     * @return array|false
      */
     public function getVisibility($path)
     {
@@ -510,10 +517,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param string $path
      * @return array|false
      */
-    protected function findPathData($path)
+    protected function findPathData(string $path)
     {
         $select = "SELECT * FROM {$this->pathTable} WHERE path = :path LIMIT 1";
         $stmt   = $this->db->prepare($select);
@@ -522,7 +528,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $data = $stmt->fetch(\PDO::FETCH_ASSOC);
-        if ($this->hasExpired($data)) {
+        if ($data === false || $this->hasExpired($data)) {
             return false;
         }
 
@@ -530,7 +536,7 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param array $data
+     * @param array|bool $data
      * @return array|bool
      */
     protected function normalizeMetadata($data)
@@ -561,11 +567,7 @@ class PdoAdapter implements AdapterInterface
         return $meta;
     }
 
-    /**
-     * @param array $data
-     * @return bool
-     */
-    protected function hasExpired($data)
+    protected function hasExpired(array $data): bool
     {
         if (isset($data['expiry']) &&
             !empty($data['expiry']) &&
@@ -579,11 +581,9 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param string $path
-     * @param string $property
      * @return array|false
      */
-    protected function getFileMetadataValue($path, $property)
+    protected function getFileMetadataValue(string $path, string $property)
     {
         $meta = $this->getMetadata($path);
         if ($meta['type'] != 'file' || !isset($meta[$property])) {
@@ -594,24 +594,18 @@ class PdoAdapter implements AdapterInterface
 
     /**
      * @param string $type 'file' or 'dir'
-     * @param string $path
-     * @param string $visibility 'public' or 'private'
-     * @param string $mimeType
-     * @param int $size
-     * @param bool $enableCompression
-     * @param string $expiry
-     * @param array $additional
+     * @param string|null $visibility 'public' or 'private'
      * @return bool|string
      */
     protected function insertPath(
-        $type,
-        $path,
-        $visibility = null,
-        $mimeType = null,
-        $size = null,
-        $enableCompression = true,
-        $expiry = null,
-        $additional = null
+        string $type,
+        string $path,
+        string $visibility = null,
+        string $mimeType = null,
+        int $size = null,
+        bool $enableCompression = true,
+        string $expiry = null,
+        array $additional = null
     ) {
         $data = [
             'type'          => $type == 'dir' ? 'dir' : 'file',
@@ -647,7 +641,7 @@ class PdoAdapter implements AdapterInterface
      * @param string|null $now Timestamp in expected format for query
      * @return int Number of expired files deleted
      */
-    public function deleteExpired($now = null)
+    public function deleteExpired(?string $now = null): int
     {
         if ($now === null) {
             $now = date('Y-m-d H:i:s');
@@ -665,23 +659,14 @@ class PdoAdapter implements AdapterInterface
         return $stmt->rowCount();
     }
 
-    /**
-     * @param int $pathId
-     * @return bool
-     */
-    protected function deletePath($pathId)
+    protected function deletePath(int $pathId): bool
     {
         $delete = "DELETE FROM {$this->pathTable} WHERE path_id = :path_id";
         $stmt   = $this->db->prepare($delete);
         return (bool)$stmt->execute(['path_id' => (int)$pathId]);
     }
 
-    /**
-     * @param int $pathId
-     * @param resource $resource
-     * @param bool $enableCompression
-     */
-    protected function insertChunks($pathId, $resource, $enableCompression)
+    protected function insertChunks(int $pathId, $resource, bool $enableCompression): void
     {
         rewind($resource);
 
@@ -714,32 +699,24 @@ class PdoAdapter implements AdapterInterface
         }
     }
 
-    /**
-     * @param int $pathId
-     * @return bool
-     */
-    protected function deleteChunks($pathId)
+    protected function deleteChunks(int $pathId): bool
     {
         $delete = "DELETE FROM {$this->chunkTable} WHERE path_id = :path_id";
         $stmt   = $this->db->prepare($delete);
         return (bool)$stmt->execute(['path_id' => $pathId]);
     }
 
-    /**
-     * @return string
-     */
-    protected function getTempFilename()
+    protected function getTempFilename(): string
     {
         $tempDir = $this->config->get('temp_dir');
         return tempnam($tempDir, "flysystempdo");
     }
 
     /**
-     * @param string $filename
      * @param string|resource $content
      * @return resource
      */
-    protected function getTempResource($filename, $content)
+    protected function getTempResource(string $filename, $content)
     {
         $resource = fopen($filename, 'w+b');
         if (!is_resource($content)) {
@@ -756,9 +733,8 @@ class PdoAdapter implements AdapterInterface
 
     /**
      * @param resource $resource
-     * @param string $filename
      */
-    protected function cleanupTemp($resource, $filename)
+    protected function cleanupTemp($resource, string $filename): void
     {
         if (is_resource($resource)) {
             fclose($resource);

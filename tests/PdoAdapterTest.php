@@ -23,7 +23,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
      */
     protected $emptyConfig;
 
-    public function setUp()
+    public function setUp(): void
     {
         parent::setUp();
         $this->emptyConfig = new Config();
@@ -31,7 +31,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->adapter     = new PdoAdapter($this->pdo);
     }
 
-    public function tearDown()
+    public function tearDown(): void
     {
         $this->adapter     = null;
         $this->pdo         = null;
@@ -39,12 +39,12 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         parent::tearDown();
     }
 
-    public function testImplementsAdapterInterface()
+    public function testImplementsAdapterInterface(): void
     {
         $this->assertInstanceOf(AdapterInterface::class, $this->adapter);
     }
 
-    public function testTablePrefixDefault()
+    public function testTablePrefixDefault(): void
     {
         $default = 'flysystem';
         $stmt    = $this->getMock(\PDOStatement::class);
@@ -56,7 +56,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->adapter->write('somefile.txt', '', $this->emptyConfig);
     }
 
-    public function testTablePrefixConfigurationIsHonored()
+    public function testTablePrefixConfigurationIsHonored(): void
     {
         $prefix = 'myprefix';
         $config = new Config(['table_prefix' => $prefix]);
@@ -69,7 +69,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         (new PdoAdapter($this->pdo, $config))->write('somefile.txt', '', $this->emptyConfig);
     }
 
-    public function testTablePrefixConfigurationWithBlankValue()
+    public function testTablePrefixConfigurationWithBlankValue(): void
     {
         $default = 'flysystem';
         $prefix  = '';
@@ -83,9 +83,15 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         (new PdoAdapter($this->pdo, $config))->write('somefile.txt', '', $this->emptyConfig);
     }
 
-    public function testWrite()
+    public function testWrite(): void
     {
         $this->setupBasicDbResponse();
+
+        $pathId = rand(1, 1000);
+
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn($pathId);
 
         $path    = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -98,23 +104,27 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             'visibility' => 'public',
             'size'       => strlen($content),
             'timestamp'  => time(), // this is going to bite me in the arse!
-            'path_id'    => null,
+            'path_id'    => $pathId,
             'mimetype'   => 'text/plain'
         ];
         $this->assertEquals($expected, $meta);
     }
 
-    public function testWriteWithDbFailure()
+    public function testWriteWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
-            ->write('/file.txt', null, $this->emptyConfig);
+            ->write('/file.txt', '', $this->emptyConfig);
         $this->assertFalse($meta);
     }
 
-    public function testWriteDetectsMimetypeByExtension()
+    public function testWriteDetectsMimetypeByExtension(): void
     {
         $this->setupBasicDbResponse();
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
+
         $meta = $this->adapter
             ->write(
                 '/example.json',
@@ -125,9 +135,13 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('application/json', $meta['mimetype']);
     }
 
-    public function testWriteDetectsMimetypeByContent()
+    public function testWriteDetectsMimetypeByContent(): void
     {
         $this->setupBasicDbResponse();
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
+
         $meta = $this->adapter
             ->write(
                 '/missing-extension',
@@ -138,9 +152,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('image/gif', $meta['mimetype']);
     }
 
-    public function testWriteToStream()
+    public function testWriteToStream(): void
     {
         $this->setupBasicDbResponse();
+
+        $pathId = rand(1, 1000);
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn($pathId);
 
         $path    = '/some/path/to/file.txt';
         $content = 'Test File';
@@ -154,13 +173,13 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             'visibility' => 'public',
             'size'       => strlen($content),
             'timestamp'  => time(), // this is going to bite me in the arse!
-            'path_id'    => null,
+            'path_id'    => $pathId,
             'mimetype'   => 'text/plain'
         ];
         $this->assertEquals($expected, $meta);
     }
 
-    public function testWriteToStreamWithDbFailure()
+    public function testWriteToStreamWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
@@ -168,9 +187,13 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertFalse($meta);
     }
 
-    public function testWriteToStreamDetectsMimetypeByExtension()
+    public function testWriteToStreamDetectsMimetypeByExtension(): void
     {
         $this->setupBasicDbResponse();
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
+
         $handle = $this->createTempResource();
         $meta   = $this->adapter
             ->writeStream(
@@ -186,9 +209,13 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
      * This test documents the intended behaviour. The adapter attempts at no point, when using streams,
      * to load the file into memory.
      */
-    public function testWriteToStreamFailsToDetectMimetypeByContent()
+    public function testWriteToStreamFailsToDetectMimetypeByContent(): void
     {
         $this->setupBasicDbResponse();
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
+
         $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='); // 1x1 transparent gif
         $handle  = $this->createTempResource($content);
         $meta    = $this->adapter
@@ -201,7 +228,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertNotEquals('image/gif', $meta['mimetype']);
     }
 
-    public function testUpdate()
+    public function testUpdate(): void
     {
         $path    = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -224,7 +251,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals(strlen($content), $meta['size']);
     }
 
-    public function testUpdateWithDbFailure()
+    public function testUpdateWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
@@ -233,7 +260,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertFalse($meta);
     }
 
-    public function testUpdateDetectsMimetypeByExtension()
+    public function testUpdateDetectsMimetypeByExtension(): void
     {
         $path = '/example.json';
         $data = [
@@ -254,7 +281,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('application/json', $meta['mimetype']);
     }
 
-    public function testUpdateDetectsMimetypeByContent()
+    public function testUpdateDetectsMimetypeByContent(): void
     {
         $path = '/missing-extension';
         $data = [
@@ -279,7 +306,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('image/gif', $meta['mimetype']);
     }
 
-    public function testUpdateToStream()
+    public function testUpdateToStream(): void
     {
         $path    = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -302,7 +329,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals(strlen($content), $meta['size']);
     }
 
-    public function testUpdateToStreamWithDbFailure()
+    public function testUpdateToStreamWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
@@ -311,7 +338,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertFalse($meta);
     }
 
-    public function testUpdateToStreamDetectsMimetypeByExtension()
+    public function testUpdateToStreamDetectsMimetypeByExtension(): void
     {
         $path = '/example.json';
         $data = [
@@ -333,7 +360,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('application/json', $meta['mimetype']);
     }
 
-    public function testUpdateToStreamFailsToDetectsMimetypeByContent()
+    public function testUpdateToStreamFailsToDetectsMimetypeByContent(): void
     {
         $path = '/missing-extension';
         $data = [
@@ -356,7 +383,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertNotEquals('image/gif', $meta['mimetype']);
     }
 
-    public function testRenameFile()
+    public function testRenameFile(): void
     {
         $path    = '/the-old-name.asp';
         $newName = '/the-new-name.php';
@@ -374,14 +401,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals($newName, $meta['path']);
     }
 
-    public function testRenameWithDbFailure()
+    public function testRenameWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter->rename('/the-old-name.asp', '/the-new-name.php');
         $this->assertFalse($meta);
     }
 
-    public function testRenameDirectory()
+    public function testRenameDirectory(): void
     {
         $path    = '/the-old-name';
         $newName = '/the-new-name';
@@ -414,7 +441,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals($newName, $meta['path']);
     }
 
-    public function testCopy()
+    public function testCopy(): void
     {
         $path    = '/the-old-name.txt';
         $newpath = '/the-new-name.txt';
@@ -428,12 +455,15 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             'is_compressed' => 1,
             'update_ts'     => date('Y-m-d H:i:s')
         ]);
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
 
         $meta = $this->adapter->copy($path, $newpath);
         $this->assertEquals($meta['path'], $newpath);
     }
 
-    public function testCopyFailsToFindPath()
+    public function testCopyFailsToFindPath(): void
     {
         $path    = '/the-old-name.txt';
         $newpath = '/the-new-name.txt';
@@ -443,7 +473,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertFalse($meta);
     }
 
-    public function testCopyDoesntCopyModifiedTime()
+    public function testCopyDoesntCopyModifiedTime(): void
     {
         $time    = strtotime('yesterday');
         $path    = '/the-old-name.txt';
@@ -459,29 +489,33 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             'update_ts'     => date('Y-m-d H:i:s', $time)
         ]);
 
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
+
         $meta = $this->adapter->copy($path, $newpath);
         $this->assertGreaterThan($time, $meta['timestamp']);
     }
 
-    public function testDelete()
+    public function testDelete(): void
     {
         $this->setupDbFetchResponse(['type' => 'file', 'path_id' => 123]);
         $this->assertTrue($this->adapter->delete('/some-file.txt'));
     }
 
-    public function testDeleteWithNonFilePath()
+    public function testDeleteWithNonFilePath(): void
     {
         $this->setupDbFetchResponse(['type' => 'dir', 'path_id' => 123]);
         $this->assertFalse($this->adapter->delete('/some-file.txt'));
     }
 
-    public function testDeleteWithDbFailure()
+    public function testDeleteWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $this->assertFalse($this->adapter->delete('/some-file.txt'));
     }
 
-    public function testDeleteEmptyDirectory()
+    public function testDeleteEmptyDirectory(): void
     {
         $this->setupDbMultiCall([
             [
@@ -495,7 +529,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertTrue($this->adapter->deleteDir('/some-directory'));
     }
 
-    public function testDeleteDirectoryWithChildren()
+    public function testDeleteDirectoryWithChildren(): void
     {
         $this->setupDbMultiCall([
             [
@@ -524,19 +558,19 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertTrue($this->adapter->deleteDir('/some-directory'));
     }
 
-    public function testDeleteDirWithNonDirectoryPath()
+    public function testDeleteDirWithNonDirectoryPath(): void
     {
         $this->setupDbFetchResponse(['type' => 'file', 'path_id' => 123]);
         $this->assertFalse($this->adapter->deleteDir('/some-file.txt'));
     }
 
-    public function testDeleteDirWithDbFailure()
+    public function testDeleteDirWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $this->assertFalse($this->adapter->deleteDir('/some-directory'));
     }
 
-    public function testCreateDir()
+    public function testCreateDir(): void
     {
         $pathId = 12345;
         $this->setupBasicDbResponse();
@@ -548,7 +582,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals($pathId, $meta['path_id']);
     }
 
-    public function testCreateDirWithAdditionalFields()
+    public function testCreateDirWithAdditionalFields(): void
     {
         $pathId = 12345;
         $this->setupBasicDbResponse();
@@ -563,14 +597,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals($owner, $meta['meta']['owner']);
     }
 
-    public function testCreateDirWithDbFailure()
+    public function testCreateDirWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter->createDir('/path', $this->emptyConfig);
         $this->assertFalse($meta);
     }
 
-    public function testSetVisibility()
+    public function testSetVisibility(): void
     {
         $path = '/path/to/file.txt';
         $this->setupDbFetchResponse([
@@ -587,7 +621,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertNotFalse($meta);
     }
 
-    public function testSetVisibilityWithDbFailure()
+    public function testSetVisibilityWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
@@ -595,7 +629,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertFalse($meta);
     }
 
-    public function testHas()
+    public function testHas(): void
     {
         $stmt = $this->setupBasicDbResponse();
         $stmt->expects($this->any())
@@ -604,13 +638,13 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertTrue($this->adapter->has('/this/path'));
     }
 
-    public function testHasWithDbFailure()
+    public function testHasWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $this->assertFalse($this->adapter->has('/this/path'));
     }
 
-    public function testReadReturnsContents()
+    public function testReadReturnsContents(): void
     {
         $path = '/path/to/file.txt';
         $this->setupDbFetchResponse([
@@ -627,14 +661,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertArrayHasKey('contents', $meta);
     }
 
-    public function testReadWithDbFailure()
+    public function testReadWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter->read('/path/to/file.txt');
         $this->assertFalse($meta);
     }
 
-    public function testReadStreamReturnsStream()
+    public function testReadStreamReturnsStream(): void
     {
         $path = '/path/to/file.txt';
         $this->setupDbFetchResponse([
@@ -651,14 +685,14 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertTrue(is_resource($meta['stream']));
     }
 
-    public function testReadStreamWithDbFailure()
+    public function testReadStreamWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter->readStream('/path/to/file.txt');
         $this->assertFalse($meta);
     }
 
-    public function testListContents()
+    public function testListContents(): void
     {
         $this->setupDbFetchResponse(
             [
@@ -679,21 +713,21 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertCount(1, $listing);
     }
 
-    public function testListContentsWithEmtpyResults()
+    public function testListContentsWithEmtpyResults(): void
     {
         $this->setupDbFetchResponse([], 'fetchAll');
         $listing = $this->adapter->listContents('/path');
         $this->assertEmpty($listing);
     }
 
-    public function testListContentsWithDbFailure()
+    public function testListContentsWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $listing = $this->adapter->listContents('/path');
         $this->assertEmpty($listing);
     }
 
-    public function testGetMetadataHasCorrectKeysForFile()
+    public function testGetMetadataHasCorrectKeysForFile(): void
     {
         $this->setupDbFetchResponse([
             'path_id'       => 123,
@@ -712,7 +746,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEmpty($unexpectedKeys);
     }
 
-    public function testGetMetadataHasCorrectKeysForFileWithAdditionalFields()
+    public function testGetMetadataHasCorrectKeysForFileWithAdditionalFields(): void
     {
         $this->setupDbFetchResponse([
             'path_id'       => 123,
@@ -734,7 +768,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEmpty($unexpectedKeys);
     }
 
-    public function testGetMetadataNormalizesDataForDirectory()
+    public function testGetMetadataNormalizesDataForDirectory(): void
     {
         $this->setupDbFetchResponse([
             'path_id'       => 123,
@@ -753,7 +787,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEmpty($unexpectedKeys);
     }
 
-    public function testGetMetadataNormalizesDataForDirectoryWithAdditionalFields()
+    public function testGetMetadataNormalizesDataForDirectoryWithAdditionalFields(): void
     {
         $this->setupDbFetchResponse([
             'path_id'       => 123,
@@ -774,26 +808,24 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $this->assertEmpty($unexpectedKeys);
     }
 
-    public function testGetMetadataWithDbFailure()
+    public function testGetMetadataWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $this->assertFalse($this->adapter->getMetadata('/path'));
     }
 
     /**
-     * @param array $rowData
-     * @param string $attribute
      * @param mixed $expectValue
      * @dataProvider individualAttributeGetMethodsDataProvider
      */
-    public function testIndividualAttributeGetMethods(array $rowData, $attribute, $expectValue)
+    public function testIndividualAttributeGetMethods(array $rowData, string $attribute, $expectValue): void
     {
         $method = 'get' . ucfirst($attribute);
         $this->setupDbFetchResponse($rowData);
         $this->assertEquals($expectValue, $this->adapter->$method($rowData['path'])[$attribute]);
     }
 
-    public function individualAttributeGetMethodsDataProvider()
+    public function individualAttributeGetMethodsDataProvider(): array
     {
         $size       = 1234;
         $mimetype   = 'text/plain';
@@ -817,6 +849,9 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         ];
     }
 
+    /**
+     * @return resource
+     */
     protected function createTempResource($content = '')
     {
         $handle = fopen('php://temp', 'w+b');
@@ -825,7 +860,11 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         return $handle;
     }
 
-    protected function setupBasicDbResponse($response = true)
+    /**
+     * @param mixed $response
+     * @return \PDOStatement|\PHPUnit_Framework_MockObject_MockObject
+     */
+    protected function setupBasicDbResponse($response = true): \PDOStatement
     {
         $stmt = $this->getMock(\PDOStatement::class);
         $stmt->expects($this->any())
@@ -839,7 +878,10 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         return $stmt;
     }
 
-    protected function setupDbFetchResponse($response, $method = 'fetch')
+    /**
+     * @return \PDOStatement|\PHPUnit_Framework_MockObject_MockObject
+     */
+    protected function setupDbFetchResponse(array $response, $method = 'fetch'): \PDOStatement
     {
         return $this->setupDbMultiCall([
             [
@@ -849,7 +891,10 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         ]);
     }
 
-    public function setupDbMultiCall($calls)
+    /**
+     * @return \PDOStatement|\PHPUnit_Framework_MockObject_MockObject
+     */
+    public function setupDbMultiCall(array $calls): \PDOStatement
     {
         $stmt = $this->getMock(\PDOStatement::class);
         $stmt->expects($this->any())

@@ -5,8 +5,6 @@ namespace Phlib\Flysystem\Pdo\Tests;
 use League\Flysystem\AdapterInterface;
 use Phlib\Flysystem\Pdo\PdoAdapter;
 use League\Flysystem\Config;
-use PHPUnit_Extensions_Database_DataSet_IDataSet;
-use PHPUnit_Extensions_Database_DB_IDatabaseConnection;
 use PHPUnit_Extensions_Database_DataSet_ArrayDataSet as ArrayDataSet;
 
 /**
@@ -46,7 +44,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
      */
     protected $tempHandles = [];
 
-    public static function setUpBeforeClass()
+    public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
         if (!getenv('INTEGRATION_ENABLED')) {
@@ -86,7 +84,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         ];
     }
 
-    public static function tearDownAfterClass()
+    public static function tearDownAfterClass(): void
     {
         static::$driver = null;
         static::$pdo    = null;
@@ -98,7 +96,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         parent::tearDownAfterClass();
     }
 
-    public function setUp()
+    public function setUp(): void
     {
         if (!static::$pdo instanceof \PDO) {
             $this->markTestSkipped();
@@ -116,7 +114,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->emptyConfig = new Config($config);
     }
 
-    public function tearDown()
+    public function tearDown(): void
     {
         foreach ($this->tempHandles as $tempHandle) {
             if (is_resource($tempHandle)) {
@@ -129,23 +127,16 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         parent::tearDown();
     }
 
-    /**
-     * @return PHPUnit_Extensions_Database_DB_IDatabaseConnection
-     */
-    public function getConnection()
+    public function getConnection(): \PHPUnit_Extensions_Database_DB_IDatabaseConnection
     {
         return $this->createDefaultDBConnection(static::$pdo, getenv('DB_DATABASE'));
     }
 
-    /**
-     * mysqldump -hdhost --xml -t -uroot -p dbname flysystem_chunk flysystem_path > tests/_files/mysql-integration.xml
-     * @return PHPUnit_Extensions_Database_DataSet_IDataSet
-     * @throws \Exception
-     */
-    protected function getDataSet()
+    protected function getDataSet(): \PHPUnit_Extensions_Database_DataSet_IDataSet
     {
         switch (static::$driver) {
             case 'mysql':
+                // mysqldump -hdhost --xml -t -uroot -p dbname flysystem_chunk flysystem_path > tests/_files/mysql-integration.xml
                 $dataSetFile = __DIR__ . '/_files/mysql-integration.xml';
                 return $this->createMySQLXMLDataSet($dataSetFile);
             case 'sqlite':
@@ -157,7 +148,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }
     }
 
-    public function testWritingEmptyFile()
+    public function testWritingEmptyFile(): void
     {
         $filename = static::$tempFiles['00B'];
         $handle   = fopen($filename, 'r');
@@ -166,14 +157,14 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     }
 
     /**
-     * @param callable $fileCallback
-     * @param string $writeMethod
-     * @param string $readMethod
-     * @param Config $config
      * @dataProvider writtenAndReadAreTheSameFileDataProvider
      */
-    public function testWrittenAndReadAreTheSameFile($fileCallback, $writeMethod, $readMethod, $config)
-    {
+    public function testWrittenAndReadAreTheSameFile(
+        callable $fileCallback,
+        string $writeMethod,
+        string $readMethod,
+        Config $config
+    ): void {
         $filename = static::$tempFiles['10K'];
         $file     = call_user_func($fileCallback, $filename);
 
@@ -192,7 +183,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertEquals($file, $meta['contents']);
     }
 
-    public function writtenAndReadAreTheSameFileDataProvider()
+    public function writtenAndReadAreTheSameFileDataProvider(): array
     {
         $compressionConfig  = new Config(['enable_compression' => true]);
         $uncompressedConfig = new Config(['enable_compression' => false]);
@@ -209,14 +200,14 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     }
 
     /**
-     * @param callable $fileCallback
-     * @param string $updateMethod
-     * @param string $readMethod
-     * @param Config $config
      * @dataProvider updatedAndReadAreTheSameFileDataProvider
      */
-    public function testUpdatedAndReadAreTheSameFile($fileCallback, $updateMethod, $readMethod, $config)
-    {
+    public function testUpdatedAndReadAreTheSameFile(
+        callable $fileCallback,
+        string $updateMethod,
+        string $readMethod,
+        Config $config
+    ): void {
         $path = '/path/to/file.txt';
         $this->adapter->write($path, file_get_contents(static::$tempFiles['10B']), $this->emptyConfig);
 
@@ -236,7 +227,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertEquals($file, $meta['contents']);
     }
 
-    public function updatedAndReadAreTheSameFileDataProvider()
+    public function updatedAndReadAreTheSameFileDataProvider(): array
     {
         $compressionConfig  = new Config(['enable_compression' => true]);
         $uncompressedConfig = new Config(['enable_compression' => false]);
@@ -252,7 +243,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         ];
     }
 
-    public function testCopyingFile()
+    public function testCopyingFile(): void
     {
         $path1 = '/first.txt';
         $path2 = '/second.txt';
@@ -265,7 +256,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertEquals($meta1['contents'], $meta2['contents']);
     }
 
-    public function testCompressionIsSetOnThePath()
+    public function testCompressionIsSetOnThePath(): void
     {
         $filename = static::$tempFiles['10B'];
         $file     = $this->createResource($filename);
@@ -280,7 +271,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertTablesEqual($expected, $actual);
     }
 
-    public function testCopyingPathMakesAccurateCopy()
+    public function testCopyingPathMakesAccurateCopy(): void
     {
         $origPath = '/path/to/file.txt';
         $content  = file_get_contents(static::$tempFiles['10B']);
@@ -297,7 +288,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertTablesEqual($origDataSet, $copyDataSet);
     }
 
-    public function testCopyingPathMakesAccurateCopyOfChunks()
+    public function testCopyingPathMakesAccurateCopyOfChunks(): void
     {
         $origPath = '/path/to/file.txt';
         $content  = file_get_contents(static::$tempFiles['10B']);
@@ -314,7 +305,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertTablesEqual($origDataSet, $copyDataSet);
     }
 
-    public function testMemoryUsageOnWritingStream()
+    public function testMemoryUsageOnWritingStream(): void
     {
         $filename = static::$tempFiles['xl'];
         $file     = fopen($filename, 'r');
@@ -326,7 +317,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }, $variation);
     }
 
-    public function testMemoryUsageOnReadingStreamWithBuffering()
+    public function testMemoryUsageOnReadingStreamWithBuffering(): void
     {
         $config = $this->emptyConfig;
         if (static::$driver == 'mysql') {
@@ -346,7 +337,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }, $variation);
     }
 
-    public function testMemoryUsageOnReadingStreamWithoutBuffering()
+    public function testMemoryUsageOnReadingStreamWithoutBuffering(): void
     {
         if (static::$driver != 'mysql') {
             $this->markTestSkipped('Cannot test buffering on non mysql driver.');
@@ -368,7 +359,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }, $variation);
     }
 
-    public function testMemoryUsageOnUpdateStream()
+    public function testMemoryUsageOnUpdateStream(): void
     {
         $path = '/path/to/file.txt';
         $file = fopen(static::$tempFiles['10K'], 'r');
@@ -384,11 +375,9 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     }
 
     /**
-     * @param array $paths
-     * @param int $expectedRows
      * @dataProvider pathsDataProvider
      */
-    public function testAddingPaths(array $paths, $expectedRows)
+    public function testAddingPaths(array $paths, int $expectedRows): void
     {
         foreach ($paths as $path) {
             if ($path['type'] == 'dir') {
@@ -401,11 +390,9 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     }
 
     /**
-     * @param array $paths
-     * @param int $expectedRows
      * @dataProvider pathsDataProvider
      */
-    public function testListContentsMeetsExpectedOutput(array $paths, $expectedRows)
+    public function testListContentsMeetsExpectedOutput(array $paths, int $expectedRows): void
     {
         foreach ($paths as $path) {
             if ($path['type'] == 'dir') {
@@ -423,7 +410,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertCount($expectedRows, $this->adapter->listContents('/test', true));
     }
 
-    public function pathsDataProvider()
+    public function pathsDataProvider(): array
     {
         $dir1  = ['type' => 'dir', 'name' => '/test'];
         $dir2  = ['type' => 'dir', 'name' => '/test/sub1'];
@@ -446,7 +433,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         ];
     }
 
-    public function testDeletingDirectoryClearsAllFiles()
+    public function testDeletingDirectoryClearsAllFiles(): void
     {
         $this->adapter->createDir('/test', $this->emptyConfig);
         $this->adapter->write('/test/file.txt', '', $this->emptyConfig);
@@ -456,7 +443,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_path'));
     }
 
-    public function testDeletingFileClearsAllChunks()
+    public function testDeletingFileClearsAllChunks(): void
     {
         $file = file_get_contents(static::$tempFiles['xl']);
         $this->adapter->write('/test.txt', $file, $this->emptyConfig);
@@ -466,34 +453,34 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_chunk'));
     }
 
-    public function testReadingNonExistentPath()
+    public function testReadingNonExistentPath(): void
     {
         $this->assertFalse($this->adapter->read('/path/does/not/exist.txt'));
     }
 
-    public function testReadingStreamForNonExistentPath()
+    public function testReadingStreamForNonExistentPath(): void
     {
         $this->assertFalse($this->adapter->readStream('/path/does/not/exist.txt'));
     }
 
-    public function testHasForNonExistentPath()
+    public function testHasForNonExistentPath(): void
     {
         $this->assertFalse($this->adapter->has('/path/does/not/exist.txt'));
     }
 
-    public function testHasForExistingPath()
+    public function testHasForExistingPath(): void
     {
         $path = '/this/path/does/exist.txt';
         $this->adapter->write($path, 'some text', $this->emptyConfig);
         $this->assertTrue($this->adapter->has($path));
     }
 
-    public function testCopyingNonExistentPath()
+    public function testCopyingNonExistentPath(): void
     {
         $this->assertFalse($this->adapter->copy('/this/does/not/exist.txt', '/my/new/path.txt'));
     }
 
-    public function testSettingVisibility()
+    public function testSettingVisibility(): void
     {
         $path = '/test.txt';
         $config = new Config(['visibility' => AdapterInterface::VISIBILITY_PUBLIC]);
@@ -509,7 +496,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertTablesEqual($expected, $actual);
     }
 
-    protected static function fillFile($filename, $sizeKb)
+    protected static function fillFile($filename, $sizeKb): void
     {
         $chunkSize = 1024;
         $handle    = fopen($filename, 'wb+');
@@ -519,7 +506,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         fclose($handle);
     }
 
-    protected static function randomString($length)
+    protected static function randomString($length): string
     {
         static $characters;
         static $charLength;
@@ -537,7 +524,10 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         return $string;
     }
 
-    protected function createResource($filename)
+    /**
+     * @return resource
+     */
+    protected function createResource(string $filename)
     {
         $handle = fopen($filename, 'r');
         $this->tempHandles[] = $handle;
