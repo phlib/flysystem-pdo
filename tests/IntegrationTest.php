@@ -7,12 +7,15 @@ namespace Phlib\Flysystem\Pdo\Tests;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
 use Phlib\Flysystem\Pdo\PdoAdapter;
-use PHPUnit_Extensions_Database_DataSet_ArrayDataSet as ArrayDataSet;
+use PHPUnit\DbUnit\Database\Connection;
+use PHPUnit\DbUnit\DataSet\ArrayDataSet;
+use PHPUnit\DbUnit\DataSet\IDataSet;
+use PHPUnit\DbUnit\TestCase;
 
 /**
  * @group integration
  */
-class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
+class IntegrationTest extends TestCase
 {
     use MemoryTestTrait;
 
@@ -129,12 +132,12 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         parent::tearDown();
     }
 
-    public function getConnection(): \PHPUnit_Extensions_Database_DB_IDatabaseConnection
+    public function getConnection(): Connection
     {
         return $this->createDefaultDBConnection(static::$pdo, getenv('DB_DATABASE'));
     }
 
-    protected function getDataSet(): \PHPUnit_Extensions_Database_DataSet_IDataSet
+    protected function getDataSet(): IDataSet
     {
         switch (static::$driver) {
             case 'mysql':

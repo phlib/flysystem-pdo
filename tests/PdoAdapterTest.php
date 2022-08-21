@@ -7,8 +7,10 @@ namespace Phlib\Flysystem\Pdo\Tests;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
 use Phlib\Flysystem\Pdo\PdoAdapter;
+use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\TestCase;
 
-class PdoAdapterTest extends \PHPUnit_Framework_TestCase
+class PdoAdapterTest extends TestCase
 {
     /**
      * @var PdoAdapter
@@ -16,12 +18,12 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     protected $adapter;
 
     /**
-     * @var \PDO|\PHPUnit_Framework_MockObject_MockObject
+     * @var \PDO|MockObject
      */
     protected $pdo;
 
     /**
-     * @var Config|\PHPUnit_Framework_MockObject_MockObject
+     * @var Config|MockObject
      */
     protected $emptyConfig;
 
@@ -861,7 +863,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     /**
      * @param mixed $response
-     * @return \PDOStatement|\PHPUnit_Framework_MockObject_MockObject
+     * @return \PDOStatement|MockObject
      */
     protected function setupBasicDbResponse($response = true): \PDOStatement
     {
@@ -876,7 +878,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     }
 
     /**
-     * @return \PDOStatement|\PHPUnit_Framework_MockObject_MockObject
+     * @return \PDOStatement|MockObject
      */
     protected function setupDbFetchResponse(array $response, $method = 'fetch'): \PDOStatement
     {
@@ -889,7 +891,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     }
 
     /**
-     * @return \PDOStatement|\PHPUnit_Framework_MockObject_MockObject
+     * @return \PDOStatement|MockObject
      */
     public function setupDbMultiCall(array $calls): \PDOStatement
     {
