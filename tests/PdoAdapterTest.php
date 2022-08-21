@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Phlib\Flysystem\Pdo\Tests;
 
 use League\Flysystem\AdapterInterface;
@@ -149,7 +151,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $meta = $this->adapter
             ->write(
                 '/missing-extension',
-                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='), // 1x1 trans gif
+                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
                 $this->emptyConfig
             );
 
@@ -220,7 +222,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
             ->method('lastInsertId')
             ->willReturn(rand(1, 1000));
 
-        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='); // 1x1 transparent gif
+        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
         $handle = $this->createTempResource($content);
         $meta = $this->adapter
             ->writeStream(
@@ -303,7 +305,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $meta = $this->adapter
             ->update(
                 $path,
-                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='), // 1x1 trans gif
+                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
                 $this->emptyConfig
             );
 
@@ -379,7 +381,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         ];
 
         $this->setupDbFetchResponse($data);
-        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='); // 1x1 transparent gif
+        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
         $handle = $this->createTempResource($content);
         $meta = $this->adapter
             ->updateStream($path, $handle, $this->emptyConfig);

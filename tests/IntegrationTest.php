@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Phlib\Flysystem\Pdo\Tests;
 
 use League\Flysystem\AdapterInterface;
@@ -108,7 +110,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->adapter = new PdoAdapter(static::$pdo);
 
         $config = [];
-        if (static::$driver == 'mysql') {
+        if (static::$driver === 'mysql') {
             $config['disable_mysql_buffering'] = true;
         }
         $this->emptyConfig = new Config($config);
@@ -153,7 +155,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $filename = static::$tempFiles['00B'];
         $handle = fopen($filename, 'r');
         $this->adapter->writeStream('/path/to/file.txt', $handle, $this->emptyConfig);
-        $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_chunk'));
+        $this->assertSame(0, $this->getConnection()->getRowCount('flysystem_chunk'));
     }
 
     /**
@@ -180,7 +182,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
             $meta['contents'] = stream_get_contents($meta['stream']);
         }
 
-        $this->assertEquals($file, $meta['contents']);
+        $this->assertSame($file, $meta['contents']);
     }
 
     public function writtenAndReadAreTheSameFileDataProvider(): array
@@ -228,7 +230,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         if (isset($meta['stream'])) {
             $meta['contents'] = stream_get_contents($meta['stream']);
         }
-        $this->assertEquals($file, $meta['contents']);
+        $this->assertSame($file, $meta['contents']);
     }
 
     public function updatedAndReadAreTheSameFileDataProvider(): array
@@ -261,7 +263,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $meta1 = $this->adapter->read($path1);
         $meta2 = $this->adapter->read($path2);
 
-        $this->assertEquals($meta1['contents'], $meta2['contents']);
+        $this->assertSame($meta1['contents'], $meta2['contents']);
     }
 
     public function testCompressionIsSetOnThePath(): void
@@ -337,7 +339,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     public function testMemoryUsageOnReadingStreamWithBuffering(): void
     {
         $config = $this->emptyConfig;
-        if (static::$driver == 'mysql') {
+        if (static::$driver === 'mysql') {
             $config = new Config([
                 'enable_mysql_buffering' => true,
             ]);
@@ -358,7 +360,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
 
     public function testMemoryUsageOnReadingStreamWithoutBuffering(): void
     {
-        if (static::$driver != 'mysql') {
+        if (static::$driver !== 'mysql') {
             $this->markTestSkipped('Cannot test buffering on non mysql driver.');
             return;
         }
@@ -401,13 +403,13 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     public function testAddingPaths(array $paths, int $expectedRows): void
     {
         foreach ($paths as $path) {
-            if ($path['type'] == 'dir') {
+            if ($path['type'] === 'dir') {
                 $this->adapter->createDir($path['name'], $this->emptyConfig);
             } else {
                 $this->adapter->write($path['name'], '', $this->emptyConfig);
             }
         }
-        $this->assertEquals($expectedRows, $this->getConnection()->getRowCount('flysystem_path'));
+        $this->assertSame($expectedRows, $this->getConnection()->getRowCount('flysystem_path'));
     }
 
     /**
@@ -416,7 +418,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     public function testListContentsMeetsExpectedOutput(array $paths, int $expectedRows): void
     {
         foreach ($paths as $path) {
-            if ($path['type'] == 'dir') {
+            if ($path['type'] === 'dir') {
                 $this->adapter->createDir($path['name'], $this->emptyConfig);
             } else {
                 $this->adapter->write($path['name'], '', $this->emptyConfig);
@@ -477,9 +479,9 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->adapter->createDir('/test', $this->emptyConfig);
         $this->adapter->write('/test/file.txt', '', $this->emptyConfig);
 
-        $this->assertEquals(2, $this->getConnection()->getRowCount('flysystem_path'));
+        $this->assertSame(2, $this->getConnection()->getRowCount('flysystem_path'));
         $this->adapter->deleteDir('/test');
-        $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_path'));
+        $this->assertSame(0, $this->getConnection()->getRowCount('flysystem_path'));
     }
 
     public function testDeletingFileClearsAllChunks(): void
@@ -489,7 +491,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
 
         $this->assertGreaterThan(0, $this->getConnection()->getRowCount('flysystem_chunk'));
         $this->adapter->delete('/test.txt');
-        $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_chunk'));
+        $this->assertSame(0, $this->getConnection()->getRowCount('flysystem_chunk'));
     }
 
     public function testReadingNonExistentPath(): void

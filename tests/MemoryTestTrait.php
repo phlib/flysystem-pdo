@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Phlib\Flysystem\Pdo\Tests;
 
 trait MemoryTestTrait
@@ -13,7 +15,7 @@ trait MemoryTestTrait
     {
         $this->previousMemoryLimit = false;
         $current = ini_get('memory_limit');
-        if ($current != $quantity) {
+        if ($current !== $quantity) {
             $this->previousMemoryLimit = ini_set('memory_limit', $quantity);
         }
     }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Phlib\Flysystem\Pdo;
 
 use League\Flysystem\AdapterInterface;
@@ -46,7 +48,7 @@ class PdoAdapter implements AdapterInterface
         $this->config = $config;
 
         $tablePrefix = trim($this->config->get('table_prefix'));
-        if ($tablePrefix == '') {
+        if ($tablePrefix === '') {
             $tablePrefix = $defaultPrefix;
         }
         $this->pathTable = "{$tablePrefix}_path";
@@ -162,7 +164,7 @@ class PdoAdapter implements AdapterInterface
     protected function doUpdate(string $path, string $filename, string $contents, $resource, Config $config)
     {
         $data = $this->findPathData($path);
-        if (!is_array($data) || $data['type'] != 'file') {
+        if (!is_array($data) || $data['type'] !== 'file') {
             return false;
         }
 
@@ -224,7 +226,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         // rename all children when it's directory
-        if ($data['type'] == 'dir') {
+        if ($data['type'] === 'dir') {
             $pathLength = strlen($path);
             $listing = $this->listContents($path, true);
             foreach ($listing as $item) {
@@ -260,13 +262,13 @@ class PdoAdapter implements AdapterInterface
             $newData['path'],
             $data['visibility'],
             $data['mimetype'],
-            $data['size'],
-            $data['is_compressed'],
+            (int)$data['size'],
+            (bool)$data['is_compressed'],
             $data['expiry'] ?? null,
             $data['meta'] ?? null
         );
 
-        if ($newData['type'] == 'file') {
+        if ($newData['type'] === 'file') {
             $resource = $this->getChunkResource($data['path_id'], (bool)$data['is_compressed']);
             $this->insertChunks($newData['path_id'], $resource, (bool)$data['is_compressed']);
             $this->cleanupTemp($resource, '');
@@ -281,7 +283,7 @@ class PdoAdapter implements AdapterInterface
     public function delete($path): bool
     {
         $data = $this->findPathData($path);
-        if (!is_array($data) || $data['type'] != 'file') {
+        if (!is_array($data) || $data['type'] !== 'file') {
             return false;
         }
 
@@ -299,7 +301,7 @@ class PdoAdapter implements AdapterInterface
     public function deleteDir($dirname): bool
     {
         $data = $this->findPathData($dirname);
-        if (!is_array($data) || $data['type'] != 'dir') {
+        if (!is_array($data) || $data['type'] !== 'dir') {
             return false;
         }
 
@@ -307,7 +309,7 @@ class PdoAdapter implements AdapterInterface
 
         foreach ($listing as $item) {
             $this->deletePath($item['path_id']);
-            if ($item['type'] == 'file') {
+            if ($item['type'] === 'file') {
                 $this->deleteChunks($item['path_id']);
             }
         }
@@ -390,7 +392,7 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        $resource = $this->getChunkResource($data['path_id'], $data['is_compressed']);
+        $resource = $this->getChunkResource($data['path_id'], (bool)$data['is_compressed']);
 
         $metadata = $this->normalizeMetadata($data);
         $metadata['contents'] = stream_get_contents($resource);
@@ -551,6 +553,8 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
+        $data['path_id'] = (int)$data['path_id'];
+
         return $data;
     }
 
@@ -565,14 +569,14 @@ class PdoAdapter implements AdapterInterface
         }
 
         $meta = [
-            'path_id' => $data['path_id'],
+            'path_id' => (int)$data['path_id'],
             'type' => $data['type'],
             'path' => $data['path'],
             'timestamp' => strtotime($data['update_ts']),
         ];
-        if ($data['type'] == 'file') {
+        if ($data['type'] === 'file') {
             $meta['mimetype'] = $data['mimetype'];
-            $meta['size'] = $data['size'];
+            $meta['size'] = (int)$data['size'];
             $meta['visibility'] = $data['visibility'];
             if (isset($data['expiry'])) {
                 $meta['expiry'] = $data['expiry'];
@@ -605,7 +609,7 @@ class PdoAdapter implements AdapterInterface
     protected function getFileMetadataValue(string $path, string $property)
     {
         $meta = $this->getMetadata($path);
-        if ($meta['type'] != 'file' || !isset($meta[$property])) {
+        if ($meta['type'] !== 'file' || !isset($meta[$property])) {
             return false;
         }
         return [
@@ -616,7 +620,7 @@ class PdoAdapter implements AdapterInterface
     /**
      * @param string $type 'file' or 'dir'
      * @param string|null $visibility 'public' or 'private'
-     * @return bool|string
+     * @return int|false
      */
     protected function insertPath(
         string $type,
@@ -629,12 +633,12 @@ class PdoAdapter implements AdapterInterface
         array $additional = null
     ) {
         $data = [
-            'type' => $type == 'dir' ? 'dir' : 'file',
+            'type' => $type === 'dir' ? 'dir' : 'file',
             'path' => $path,
             'visibility' => $visibility,
             'mimetype' => $mimeType,
             'size' => $size,
-            'is_compressed' => (int)(bool)$enableCompression,
+            'is_compressed' => (int)$enableCompression,
         ];
         if ($expiry !== null) {
             $data['expiry'] = $expiry;
@@ -655,7 +659,7 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        return $this->db->lastInsertId();
+        return (int)$this->db->lastInsertId();
     }
 
     /**
@@ -686,8 +690,8 @@ class PdoAdapter implements AdapterInterface
     {
         $delete = "DELETE FROM {$this->pathTable} WHERE path_id = :path_id";
         $stmt = $this->db->prepare($delete);
-        return (bool)$stmt->execute([
-            'path_id' => (int)$pathId,
+        return $stmt->execute([
+            'path_id' => $pathId,
         ]);
     }
 
@@ -709,7 +713,7 @@ class PdoAdapter implements AdapterInterface
         while (!feof($resource)) {
             $content = stream_get_contents($resource, $chunkSize);
             // when an empty stream is compressed it produces \000
-            if ($content == '' || bin2hex($content) == '0300') {
+            if ($content === '' || bin2hex($content) === '0300') {
                 continue;
             }
             $stmt->execute([
@@ -728,7 +732,7 @@ class PdoAdapter implements AdapterInterface
     {
         $delete = "DELETE FROM {$this->chunkTable} WHERE path_id = :path_id";
         $stmt = $this->db->prepare($delete);
-        return (bool)$stmt->execute([
+        return $stmt->execute([
             'path_id' => $pathId,
         ]);
     }
