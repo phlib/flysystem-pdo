@@ -493,13 +493,6 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->assertFalse($this->adapter->copy('/this/does/not/exist.txt', '/my/new/path.txt'));
     }
 
-    public function testCopyingProducesTheSameFile()
-    {
-        $path = '/this/path.txt';
-        $file = $this->createResource(static::$tempFiles['10B']);
-        $this->adapter->writeStream($path, $file, $this->emptyConfig);
-    }
-
     public function testSettingVisibility()
     {
         $path = '/test.txt';
