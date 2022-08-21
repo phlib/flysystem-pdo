@@ -73,16 +73,16 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $emptyFilename      = $tmpDir . uniqid('flysystempdo-test-00B-', true);
         $tenByteFilename    = $tmpDir . uniqid('flysystempdo-test-10B-', true);
         $tenKayFilename     = $tmpDir . uniqid('flysystempdo-test-10K-', true);
-        $fifteenMegFilename = $tmpDir . uniqid('flysystempdo-test-15M-', true);
+        $xlFilename = $tmpDir . uniqid('flysystempdo-test-xl-', true);
         static::fillFile($emptyFilename, 0);
         static::fillFile($tenByteFilename, 10);
         static::fillFile($tenKayFilename, 10 * 1024);
-        static::fillFile($fifteenMegFilename, 15 * 1024 * 1024);
+        static::fillFile($xlFilename, 10 * 1024 * 1024);
         static::$tempFiles = [
             '00B' => $emptyFilename,
             '10B' => $tenByteFilename,
             '10K' => $tenKayFilename,
-            '15M' => $fifteenMegFilename
+            'xl' => $xlFilename,
         ];
     }
 
@@ -316,11 +316,11 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
 
     public function testMemoryUsageOnWritingStream()
     {
-        $filename = static::$tempFiles['15M'];
+        $filename = static::$tempFiles['xl'];
         $file     = fopen($filename, 'r');
         $path     = '/path/to/file.txt';
 
-        $variation = 2 * 1024 * 1024; // 2MB
+        $variation = 1048576; // 1MiB
         $this->memoryTest(function() use ($path, $file) {
             $this->adapter->writeStream($path, $file, $this->emptyConfig);
         }, $variation);
@@ -334,13 +334,13 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }
         $adapter = new PdoAdapter(static::$pdo, $config);
 
-        $filename = static::$tempFiles['15M'];
+        $filename = static::$tempFiles['xl'];
         $file     = fopen($filename, 'r');
         $path     = '/path/to/file.txt';
 
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
-        $variation = 2 * 1024 * 1024; // 2MB
+        $variation = 1048576; // 1MiB
         $this->memoryTest(function () use ($adapter, $path) {
             $adapter->readStream($path);
         }, $variation);
@@ -356,13 +356,13 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $config  = new Config(['enable_mysql_buffering' => false]);
         $adapter = new PdoAdapter(static::$pdo, $config);
 
-        $filename = static::$tempFiles['15M'];
+        $filename = static::$tempFiles['xl'];
         $file     = fopen($filename, 'r');
         $path     = '/path/to/file.txt';
 
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
-        $variation = 2 * 1024 * 1024; // 2MB
+        $variation = 1048576; // 1MiB
         $this->memoryTest(function () use ($adapter, $path) {
             $adapter->readStream($path);
         }, $variation);
@@ -375,9 +375,9 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->adapter->writeStream($path, $file, $this->emptyConfig);
         fclose($file);
 
-        $file = fopen(static::$tempFiles['15M'], 'r');
+        $file = fopen(static::$tempFiles['xl'], 'r');
 
-        $variation = 2 * 1024 * 1024; // 2MB
+        $variation = 1048576; // 1MiB
         $this->memoryTest(function() use ($path, $file) {
             $this->adapter->updateStream($path, $file, $this->emptyConfig);
         }, $variation);
@@ -458,7 +458,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
 
     public function testDeletingFileClearsAllChunks()
     {
-        $file = file_get_contents(static::$tempFiles['15M']);
+        $file = file_get_contents(static::$tempFiles['xl']);
         $this->adapter->write('/test.txt', $file, $this->emptyConfig);
 
         $this->assertGreaterThan(0, $this->getConnection()->getRowCount('flysystem_chunk'));
