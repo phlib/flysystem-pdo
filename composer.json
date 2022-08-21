@@ -21,8 +21,8 @@
     },
     "require-dev": {
         "symplify/easy-coding-standard": "^11",
-        "phpunit/phpunit": "^6",
-        "phpunit/dbunit": "^3"
+        "phpunit/phpunit": "^7",
+        "phpunit/dbunit": "^4"
     },
     "autoload": {
         "psr-4": {
