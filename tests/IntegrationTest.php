@@ -7,27 +7,13 @@ namespace Phlib\Flysystem\Pdo\Tests;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
 use Phlib\Flysystem\Pdo\PdoAdapter;
-use PHPUnit\DbUnit\Database\Connection;
-use PHPUnit\DbUnit\DataSet\ArrayDataSet;
-use PHPUnit\DbUnit\DataSet\IDataSet;
-use PHPUnit\DbUnit\TestCase;
 
 /**
  * @group integration
  */
-class IntegrationTest extends TestCase
+class IntegrationTest extends IntegrationTestCase
 {
     use MemoryTestTrait;
-
-    /**
-     * @var \PDO
-     */
-    protected static $pdo;
-
-    /**
-     * @var string
-     */
-    protected static $driver;
 
     /**
      * @var array
@@ -52,24 +38,11 @@ class IntegrationTest extends TestCase
     public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
+
         if (!getenv('INTEGRATION_ENABLED')) {
             // Integration test not enabled
             return;
         }
-
-        // @todo allow tests to use alternative to MySQL
-        $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
-        static::$driver = 'mysql';
-        static::$pdo = new \PDO(
-            $dsn,
-            getenv('DB_USERNAME'),
-            getenv('DB_PASSWORD'),
-            [
-                \PDO::ATTR_TIMEOUT => 2,
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
-            ]
-        );
 
         // create files
         $tmpDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR;
@@ -132,33 +105,12 @@ class IntegrationTest extends TestCase
         parent::tearDown();
     }
 
-    public function getConnection(): Connection
-    {
-        return $this->createDefaultDBConnection(static::$pdo, getenv('DB_DATABASE'));
-    }
-
-    protected function getDataSet(): IDataSet
-    {
-        switch (static::$driver) {
-            case 'mysql':
-                // mysqldump -hdhost --xml -t -uroot -p dbname flysystem_chunk flysystem_path > tests/_files/mysql-integration.xml
-                $dataSetFile = __DIR__ . '/_files/mysql-integration.xml';
-                return $this->createMySQLXMLDataSet($dataSetFile);
-            case 'sqlite':
-                $dataSetFile = __DIR__ . '/_files/sqlite-integration.xml';
-                return $this->createXMLDataSet($dataSetFile);
-            default:
-                $driver = static::$driver;
-                throw new \Exception("Missing data set for '{$driver}'");
-        }
-    }
-
     public function testWritingEmptyFile(): void
     {
         $filename = static::$tempFiles['00B'];
         $handle = fopen($filename, 'r');
         $this->adapter->writeStream('/path/to/file.txt', $handle, $this->emptyConfig);
-        static::assertSame(0, $this->getConnection()->getRowCount('flysystem_chunk'));
+        static::assertRowCount(0, 'flysystem_chunk');
     }
 
     /**
@@ -278,16 +230,10 @@ class IntegrationTest extends TestCase
             'enable_compression' => true,
         ]));
 
-        $rows = [[
-            'is_compressed' => 1,
-        ]];
         $sql = "SELECT is_compressed FROM flysystem_path WHERE path_id = {$meta['path_id']}";
-        $expected = (new ArrayDataSet([
-            'flysystem_path' => $rows,
-        ]))->getTable('flysystem_path');
-        $actual = $this->getConnection()->createQueryTable('flysystem_path', $sql);
+        $actual = static::$pdo->query($sql)->fetchColumn();
 
-        static::assertTablesEqual($expected, $actual);
+        static::assertSame('1', $actual);
     }
 
     public function testCopyingPathMakesAccurateCopy(): void
@@ -299,12 +245,11 @@ class IntegrationTest extends TestCase
         $copyPath = '/path/to/copy.txt';
         $this->adapter->copy($origPath, $copyPath);
 
-        $connection = $this->getConnection();
         $select = 'SELECT type, mimetype, visibility, size, is_compressed FROM flysystem_path WHERE path = "%s"';
-        $origDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, $origPath));
-        $copyDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, $copyPath));
+        $origDataSet = static::$pdo->query(sprintf($select, $origPath))->fetchAll();
+        $copyDataSet = static::$pdo->query(sprintf($select, $copyPath))->fetchAll();
 
-        static::assertTablesEqual($origDataSet, $copyDataSet);
+        static::assertSame($origDataSet, $copyDataSet);
     }
 
     public function testCopyingPathMakesAccurateCopyOfChunks(): void
@@ -319,12 +264,11 @@ class IntegrationTest extends TestCase
         $copyPath = '/path/to/copy.txt';
         $this->adapter->copy($origPath, $copyPath);
 
-        $connection = $this->getConnection();
         $select = 'SELECT chunk_no, content FROM flysystem_chunk JOIN flysystem_path USING (path_id) WHERE path = "%s"';
-        $origDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, $origPath));
-        $copyDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, $copyPath));
+        $origDataSet = static::$pdo->query(sprintf($select, $origPath))->fetchAll();
+        $copyDataSet = static::$pdo->query(sprintf($select, $copyPath))->fetchAll();
 
-        static::assertTablesEqual($origDataSet, $copyDataSet);
+        static::assertSame($origDataSet, $copyDataSet);
     }
 
     public function testMemoryUsageOnWritingStream(): void
@@ -412,7 +356,7 @@ class IntegrationTest extends TestCase
                 $this->adapter->write($path['name'], '', $this->emptyConfig);
             }
         }
-        static::assertSame($expectedRows, $this->getConnection()->getRowCount('flysystem_path'));
+        static::assertRowCount($expectedRows, 'flysystem_path');
     }
 
     /**
@@ -482,9 +426,9 @@ class IntegrationTest extends TestCase
         $this->adapter->createDir('/test', $this->emptyConfig);
         $this->adapter->write('/test/file.txt', '', $this->emptyConfig);
 
-        static::assertSame(2, $this->getConnection()->getRowCount('flysystem_path'));
+        static::assertRowCount(2, 'flysystem_path');
         $this->adapter->deleteDir('/test');
-        static::assertSame(0, $this->getConnection()->getRowCount('flysystem_path'));
+        static::assertRowCount(0, 'flysystem_path');
     }
 
     public function testDeletingFileClearsAllChunks(): void
@@ -492,9 +436,9 @@ class IntegrationTest extends TestCase
         $file = file_get_contents(static::$tempFiles['xl']);
         $this->adapter->write('/test.txt', $file, $this->emptyConfig);
 
-        static::assertGreaterThan(0, $this->getConnection()->getRowCount('flysystem_chunk'));
+        static::assertRowCount(8, 'flysystem_chunk');
         $this->adapter->delete('/test.txt');
-        static::assertSame(0, $this->getConnection()->getRowCount('flysystem_chunk'));
+        static::assertRowCount(0, 'flysystem_chunk');
     }
 
     public function testReadingNonExistentPath(): void
@@ -534,16 +478,10 @@ class IntegrationTest extends TestCase
 
         $this->adapter->setVisibility($path, AdapterInterface::VISIBILITY_PRIVATE);
 
-        $rows = [[
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-        ]];
-        $expected = (new ArrayDataSet([
-            'flysystem_path' => $rows,
-        ]))->getTable('flysystem_path');
         $select = "SELECT visibility FROM flysystem_path WHERE path_id = {$meta['path_id']}";
-        $actual = $this->getConnection()->createQueryTable('flysystem_path', $select);
+        $actual = static::$pdo->query($select)->fetchColumn();
 
-        static::assertTablesEqual($expected, $actual);
+        static::assertSame(AdapterInterface::VISIBILITY_PRIVATE, $actual);
     }
 
     protected static function fillFile($filename, $sizeKb): void
