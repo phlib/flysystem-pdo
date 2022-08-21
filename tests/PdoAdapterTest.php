@@ -27,7 +27,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         parent::setUp();
         $this->emptyConfig = new Config();
-        $this->pdo         = $this->getMock('\Phlib\Flysystem\Pdo\Tests\PdoMock');
+        $this->pdo         = $this->getMock(PdoMock::class);
         $this->adapter     = new PdoAdapter($this->pdo);
     }
 
@@ -41,13 +41,13 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function testImplementsAdapterInterface()
     {
-        $this->assertInstanceOf('\League\Flysystem\AdapterInterface', $this->adapter);
+        $this->assertInstanceOf(AdapterInterface::class, $this->adapter);
     }
 
     public function testTablePrefixDefault()
     {
         $default = 'flysystem';
-        $stmt    = $this->getMock('\PDOStatement');
+        $stmt    = $this->getMock(\PDOStatement::class);
         $this->pdo->expects($this->once())
             ->method('prepare')
             ->with($this->stringContains($default))
@@ -60,7 +60,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     {
         $prefix = 'myprefix';
         $config = new Config(['table_prefix' => $prefix]);
-        $stmt   = $this->getMock('\PDOStatement');
+        $stmt   = $this->getMock(\PDOStatement::class);
         $this->pdo->expects($this->once())
             ->method('prepare')
             ->with($this->stringContains($prefix))
@@ -74,7 +74,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $default = 'flysystem';
         $prefix  = '';
         $config  = new Config(['table_prefix' => $prefix]);
-        $stmt    = $this->getMock('\PDOStatement');
+        $stmt    = $this->getMock(\PDOStatement::class);
         $this->pdo->expects($this->once())
             ->method('prepare')
             ->with($this->stringContains($default))
@@ -827,7 +827,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     protected function setupBasicDbResponse($response = true)
     {
-        $stmt = $this->getMock('\PDOStatement');
+        $stmt = $this->getMock(\PDOStatement::class);
         $stmt->expects($this->any())
             ->method('execute')
             ->will($this->returnValue($response));
@@ -851,7 +851,7 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
 
     public function setupDbMultiCall($calls)
     {
-        $stmt = $this->getMock('\PDOStatement');
+        $stmt = $this->getMock(\PDOStatement::class);
         $stmt->expects($this->any())
             ->method('execute')
             ->will($this->returnValue(true));
