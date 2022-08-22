@@ -8,15 +8,9 @@ use PHPUnit\Framework\TestCase;
 
 abstract class IntegrationTestCase extends TestCase
 {
-    /**
-     * @var \PDO
-     */
-    private static $testDbAdapter;
+    private static \PDO $testDbAdapter;
 
-    /**
-     * @var string
-     */
-    private static $driver;
+    private static string $driver;
 
     final protected static function getTestDbAdapter(): \PDO
     {

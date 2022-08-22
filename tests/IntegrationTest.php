@@ -15,25 +15,13 @@ class IntegrationTest extends IntegrationTestCase
 {
     use MemoryTestTrait;
 
-    /**
-     * @var array
-     */
-    protected static $tempFiles = [];
+    private static array $tempFiles = [];
 
-    /**
-     * @var PdoAdapter
-     */
-    protected $adapter;
+    private PdoAdapter $adapter;
 
-    /**
-     * @var Config
-     */
-    protected $emptyConfig;
+    private Config $emptyConfig;
 
-    /**
-     * @var array
-     */
-    protected $tempHandles = [];
+    private array $tempHandles = [];
 
     public static function setUpBeforeClass(): void
     {
@@ -93,8 +81,8 @@ class IntegrationTest extends IntegrationTestCase
             }
         }
 
-        $this->emptyConfig = null;
-        $this->adapter = null;
+        unset($this->emptyConfig);
+        unset($this->adapter);
         parent::tearDown();
     }
 
@@ -271,7 +259,7 @@ class IntegrationTest extends IntegrationTestCase
         $path = '/path/to/file.txt';
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($path, $file) {
+        $this->memoryTest(function () use ($path, $file): void {
             $this->adapter->writeStream($path, $file, $this->emptyConfig);
         }, $variation);
     }
@@ -293,7 +281,7 @@ class IntegrationTest extends IntegrationTestCase
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($adapter, $path) {
+        $this->memoryTest(function () use ($adapter, $path): void {
             $adapter->readStream($path);
         }, $variation);
     }
@@ -317,7 +305,7 @@ class IntegrationTest extends IntegrationTestCase
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($adapter, $path) {
+        $this->memoryTest(function () use ($adapter, $path): void {
             $adapter->readStream($path);
         }, $variation);
     }
@@ -332,7 +320,7 @@ class IntegrationTest extends IntegrationTestCase
         $file = fopen(static::$tempFiles['xl'], 'r');
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($path, $file) {
+        $this->memoryTest(function () use ($path, $file): void {
             $this->adapter->updateStream($path, $file, $this->emptyConfig);
         }, $variation);
     }

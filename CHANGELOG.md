@@ -5,8 +5,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
-- Type declarations have been added to all method parameters and return types
-  where possible.
+### Added
+- Type declarations have been added to all properties, method parameters and
+  return types where possible.
 ### Changed
 - **BC break**: `copy()` and `rename()` no longer return metadata array,
   instead return boolean to match the interface.
