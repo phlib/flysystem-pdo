@@ -99,7 +99,7 @@ class PdoAdapterTest extends TestCase
 
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn($pathId);
+            ->willReturn((string)$pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -131,7 +131,7 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn(rand(1, 1000));
+            ->willReturn((string)rand(1, 1000));
 
         $meta = $this->adapter
             ->write(
@@ -148,7 +148,7 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn(rand(1, 1000));
+            ->willReturn((string)rand(1, 1000));
 
         $meta = $this->adapter
             ->write(
@@ -167,7 +167,7 @@ class PdoAdapterTest extends TestCase
         $pathId = rand(1, 1000);
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn($pathId);
+            ->willReturn((string)$pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test File';
@@ -200,7 +200,7 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn(rand(1, 1000));
+            ->willReturn((string)rand(1, 1000));
 
         $handle = $this->createTempResource();
         $meta = $this->adapter
@@ -222,7 +222,7 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn(rand(1, 1000));
+            ->willReturn((string)rand(1, 1000));
 
         $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
         $handle = $this->createTempResource($content);
@@ -465,7 +465,7 @@ class PdoAdapterTest extends TestCase
         ]);
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn(rand(1, 1000));
+            ->willReturn((string)rand(1, 1000));
 
         $actual = $this->adapter->copy($path, $newpath);
         static::assertTrue($actual);
@@ -571,7 +571,7 @@ class PdoAdapterTest extends TestCase
         $pathId = 12345;
         $this->setupBasicDbResponse();
         $this->pdo->method('lastInsertId')
-            ->willReturn($pathId);
+            ->willReturn((string)$pathId);
 
         $meta = $this->adapter->createDir('/path', $this->emptyConfig);
         static::assertEquals($pathId, $meta['path_id']);
@@ -582,7 +582,7 @@ class PdoAdapterTest extends TestCase
         $pathId = 12345;
         $this->setupBasicDbResponse();
         $this->pdo->method('lastInsertId')
-            ->willReturn($pathId);
+            ->willReturn((string)$pathId);
 
         $owner = 'exampleFoo';
         $meta = $this->adapter->createDir('/path', new Config([
