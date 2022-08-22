@@ -10,25 +10,13 @@ use League\Flysystem\Util;
 
 class PdoAdapter implements AdapterInterface
 {
-    /**
-     * @var \PDO
-     */
-    protected $db;
+    protected \PDO $db;
 
-    /**
-     * @var Config
-     */
-    protected $config;
+    protected Config $config;
 
-    /**
-     * @var string
-     */
-    protected $pathTable;
+    protected string $pathTable;
 
-    /**
-     * @var string
-     */
-    protected $chunkTable;
+    protected string $chunkTable;
 
     public function __construct(\PDO $db, Config $config = null)
     {
@@ -441,7 +429,7 @@ class PdoAdapter implements AdapterInterface
     /**
      * @param resource $resource
      */
-    protected function extractChunks(int $pathId, $resource)
+    protected function extractChunks(int $pathId, $resource): void
     {
         $select = "SELECT content FROM {$this->chunkTable} WHERE path_id = :path_id ORDER BY chunk_no ASC";
         $stmt = $this->db->prepare($select);
@@ -649,7 +637,7 @@ class PdoAdapter implements AdapterInterface
 
         $keys = array_keys($data);
         $fields = implode(', ', $keys);
-        $values = implode(', ', array_map(function ($field) {
+        $values = implode(', ', array_map(function ($field): string {
             return ':' . $field;
         }, $keys));
 

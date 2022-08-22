@@ -11,33 +11,18 @@ jobs:
     strategy:
       matrix:
         php:
-          - '7.2'
-          - '7.3'
           - '7.4'
+          - '8.0'
+          - '8.1'
 
     name: PHP ${{ matrix.php }} tests
 
     env:
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
-      DB_USERNAME: admin
-      DB_PASSWORD: adminpass
+      DB_USERNAME: root
+      DB_PASSWORD: root
       DB_DATABASE: test
-      DB_ROOT_USERNAME: root
-      DB_ROOT_PASSWORD: rootpass
-
-    services:
-      mysql:
-        image: mysql:5.7
-        env:
-          MYSQL_DATABASE: ${{ env.DB_DATABASE }}
-          MYSQL_HOST: ${{ env.DB_HOST }}
-          MYSQL_USER: ${{ env.DB_USERNAME }}
-          MYSQL_PASSWORD: ${{ env.DB_PASSWORD }}
-          MYSQL_ROOT_PASSWORD: ${{ env.DB_ROOT_PASSWORD }}
-        ports:
-          - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
       - name: Checkout
@@ -45,7 +30,10 @@ jobs:
 
       - name: Set up MySQL
         run: |
-          mysql -h${{ env.DB_HOST }} -P${{ env.DB_PORT }} -u${{ env.DB_ROOT_USERNAME }} -p${{ env.DB_ROOT_PASSWORD }} ${{ env.DB_DATABASE }} < schema/mysql.sql
+          sudo /etc/init.d/mysql start
+          mysql -e 'SHOW VARIABLES LIKE "version%";' -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }}
+          mysql -e 'CREATE DATABASE ${{ env.DB_DATABASE }};' -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }}
+          mysql -h${{ env.DB_HOST }} -P${{ env.DB_PORT }} -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }} ${{ env.DB_DATABASE }} < schema/mysql.sql
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2

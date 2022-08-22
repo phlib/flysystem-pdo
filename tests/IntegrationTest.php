@@ -15,25 +15,13 @@ class IntegrationTest extends IntegrationTestCase
 {
     use MemoryTestTrait;
 
-    /**
-     * @var array
-     */
-    protected static $tempFiles = [];
+    private static array $tempFiles = [];
 
-    /**
-     * @var PdoAdapter
-     */
-    protected $adapter;
+    private PdoAdapter $adapter;
 
-    /**
-     * @var Config
-     */
-    protected $emptyConfig;
+    private Config $emptyConfig;
 
-    /**
-     * @var array
-     */
-    protected $tempHandles = [];
+    private array $tempHandles = [];
 
     public static function setUpBeforeClass(): void
     {
@@ -64,8 +52,6 @@ class IntegrationTest extends IntegrationTestCase
 
     public static function tearDownAfterClass(): void
     {
-        static::$driver = null;
-        static::$pdo = null;
         foreach (static::$tempFiles as $file) {
             if (is_file($file)) {
                 unlink($file);
@@ -76,17 +62,12 @@ class IntegrationTest extends IntegrationTestCase
 
     protected function setUp(): void
     {
-        if (!static::$pdo instanceof \PDO) {
-            static::markTestSkipped();
-            return;
-        }
-
         parent::setUp();
 
-        $this->adapter = new PdoAdapter(static::$pdo);
+        $this->adapter = new PdoAdapter(static::getTestDbAdapter());
 
         $config = [];
-        if (static::$driver === 'mysql') {
+        if (static::getDbDriverName() === 'mysql') {
             $config['disable_mysql_buffering'] = true;
         }
         $this->emptyConfig = new Config($config);
@@ -100,8 +81,8 @@ class IntegrationTest extends IntegrationTestCase
             }
         }
 
-        $this->emptyConfig = null;
-        $this->adapter = null;
+        unset($this->emptyConfig);
+        unset($this->adapter);
         parent::tearDown();
     }
 
@@ -231,9 +212,10 @@ class IntegrationTest extends IntegrationTestCase
         ]));
 
         $sql = "SELECT is_compressed FROM flysystem_path WHERE path_id = {$meta['path_id']}";
-        $actual = static::$pdo->query($sql)->fetchColumn();
+        $actual = static::getTestDbAdapter()->query($sql)->fetchColumn();
 
-        static::assertSame('1', $actual);
+        // @todo ^php81: Native types in php81 mean that `$actual` will already be an int
+        static::assertSame(1, (int)$actual);
     }
 
     public function testCopyingPathMakesAccurateCopy(): void
@@ -246,8 +228,8 @@ class IntegrationTest extends IntegrationTestCase
         $this->adapter->copy($origPath, $copyPath);
 
         $select = 'SELECT type, mimetype, visibility, size, is_compressed FROM flysystem_path WHERE path = "%s"';
-        $origDataSet = static::$pdo->query(sprintf($select, $origPath))->fetchAll();
-        $copyDataSet = static::$pdo->query(sprintf($select, $copyPath))->fetchAll();
+        $origDataSet = static::getTestDbAdapter()->query(sprintf($select, $origPath))->fetchAll();
+        $copyDataSet = static::getTestDbAdapter()->query(sprintf($select, $copyPath))->fetchAll();
 
         static::assertSame($origDataSet, $copyDataSet);
     }
@@ -265,8 +247,8 @@ class IntegrationTest extends IntegrationTestCase
         $this->adapter->copy($origPath, $copyPath);
 
         $select = 'SELECT chunk_no, content FROM flysystem_chunk JOIN flysystem_path USING (path_id) WHERE path = "%s"';
-        $origDataSet = static::$pdo->query(sprintf($select, $origPath))->fetchAll();
-        $copyDataSet = static::$pdo->query(sprintf($select, $copyPath))->fetchAll();
+        $origDataSet = static::getTestDbAdapter()->query(sprintf($select, $origPath))->fetchAll();
+        $copyDataSet = static::getTestDbAdapter()->query(sprintf($select, $copyPath))->fetchAll();
 
         static::assertSame($origDataSet, $copyDataSet);
     }
@@ -278,7 +260,7 @@ class IntegrationTest extends IntegrationTestCase
         $path = '/path/to/file.txt';
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($path, $file) {
+        $this->memoryTest(function () use ($path, $file): void {
             $this->adapter->writeStream($path, $file, $this->emptyConfig);
         }, $variation);
     }
@@ -286,12 +268,12 @@ class IntegrationTest extends IntegrationTestCase
     public function testMemoryUsageOnReadingStreamWithBuffering(): void
     {
         $config = $this->emptyConfig;
-        if (static::$driver === 'mysql') {
+        if (static::getDbDriverName() === 'mysql') {
             $config = new Config([
                 'enable_mysql_buffering' => true,
             ]);
         }
-        $adapter = new PdoAdapter(static::$pdo, $config);
+        $adapter = new PdoAdapter(static::getTestDbAdapter(), $config);
 
         $filename = static::$tempFiles['xl'];
         $file = fopen($filename, 'r');
@@ -300,22 +282,21 @@ class IntegrationTest extends IntegrationTestCase
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($adapter, $path) {
+        $this->memoryTest(function () use ($adapter, $path): void {
             $adapter->readStream($path);
         }, $variation);
     }
 
     public function testMemoryUsageOnReadingStreamWithoutBuffering(): void
     {
-        if (static::$driver !== 'mysql') {
+        if (static::getDbDriverName() !== 'mysql') {
             static::markTestSkipped('Cannot test buffering on non mysql driver.');
-            return;
         }
 
         $config = new Config([
             'enable_mysql_buffering' => false,
         ]);
-        $adapter = new PdoAdapter(static::$pdo, $config);
+        $adapter = new PdoAdapter(static::getTestDbAdapter(), $config);
 
         $filename = static::$tempFiles['xl'];
         $file = fopen($filename, 'r');
@@ -324,7 +305,7 @@ class IntegrationTest extends IntegrationTestCase
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($adapter, $path) {
+        $this->memoryTest(function () use ($adapter, $path): void {
             $adapter->readStream($path);
         }, $variation);
     }
@@ -339,7 +320,7 @@ class IntegrationTest extends IntegrationTestCase
         $file = fopen(static::$tempFiles['xl'], 'r');
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($path, $file) {
+        $this->memoryTest(function () use ($path, $file): void {
             $this->adapter->updateStream($path, $file, $this->emptyConfig);
         }, $variation);
     }
@@ -479,7 +460,7 @@ class IntegrationTest extends IntegrationTestCase
         $this->adapter->setVisibility($path, AdapterInterface::VISIBILITY_PRIVATE);
 
         $select = "SELECT visibility FROM flysystem_path WHERE path_id = {$meta['path_id']}";
-        $actual = static::$pdo->query($select)->fetchColumn();
+        $actual = static::getTestDbAdapter()->query($select)->fetchColumn();
 
         static::assertSame(AdapterInterface::VISIBILITY_PRIVATE, $actual);
     }
