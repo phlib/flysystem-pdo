@@ -49,7 +49,7 @@ trait MemoryTestTrait
         $variationInMeg = round($variation / 1024 / 1024) . 'M';
         $differenceInMeg = round(($difference - $variation) / 1024 / 1024, 1) . 'M';
         $message = "The memory was exceeded by '{$differenceInMeg}' above the '{$variationInMeg}' variation limit.";
-        $this->assertLessThanOrEqual($variation, $difference, $message);
+        static::assertLessThanOrEqual($variation, $difference, $message);
 
         $this->tearDownMemoryLimit();
     }

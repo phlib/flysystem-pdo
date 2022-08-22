@@ -290,7 +290,6 @@ class IntegrationTest extends IntegrationTestCase
     {
         if (static::getDbDriverName() !== 'mysql') {
             static::markTestSkipped('Cannot test buffering on non mysql driver.');
-            return;
         }
 
         $config = new Config([
