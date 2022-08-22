@@ -1,12 +1,16 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Phlib\Flysystem\Pdo\Tests;
 
-use Phlib\Flysystem\Pdo\PdoAdapter;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
+use Phlib\Flysystem\Pdo\PdoAdapter;
+use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\TestCase;
 
-class PdoAdapterTest extends \PHPUnit_Framework_TestCase
+class PdoAdapterTest extends TestCase
 {
     /**
      * @var PdoAdapter
@@ -14,107 +18,121 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
     protected $adapter;
 
     /**
-     * @var \PDO|\PHPUnit_Framework_MockObject_MockObject
+     * @var \PDO|MockObject
      */
     protected $pdo;
 
     /**
-     * @var Config|\PHPUnit_Framework_MockObject_MockObject
+     * @var Config|MockObject
      */
     protected $emptyConfig;
 
-    public function setUp()
+    protected function setUp(): void
     {
         parent::setUp();
         $this->emptyConfig = new Config();
-        $this->pdo         = $this->getMock('\Phlib\Flysystem\Pdo\Tests\PdoMock');
-        $this->adapter     = new PdoAdapter($this->pdo);
+        $this->pdo = $this->createMock(\PDO::class);
+        $this->adapter = new PdoAdapter($this->pdo);
     }
 
-    public function tearDown()
+    protected function tearDown(): void
     {
-        $this->adapter     = null;
-        $this->pdo         = null;
+        $this->adapter = null;
+        $this->pdo = null;
         $this->emptyConfig = null;
         parent::tearDown();
     }
 
-    public function testImplementsAdapterInterface()
+    public function testImplementsAdapterInterface(): void
     {
-        $this->assertInstanceOf('\League\Flysystem\AdapterInterface', $this->adapter);
+        static::assertInstanceOf(AdapterInterface::class, $this->adapter);
     }
 
-    public function testTablePrefixDefault()
+    public function testTablePrefixDefault(): void
     {
         $default = 'flysystem';
-        $stmt    = $this->getMock('\PDOStatement');
-        $this->pdo->expects($this->once())
+        $stmt = $this->createMock(\PDOStatement::class);
+        $this->pdo->expects(static::once())
             ->method('prepare')
-            ->with($this->stringContains($default))
-            ->will($this->returnValue($stmt));
+            ->with(static::stringContains($default))
+            ->willReturn($stmt);
 
         $this->adapter->write('somefile.txt', '', $this->emptyConfig);
     }
 
-    public function testTablePrefixConfigurationIsHonored()
+    public function testTablePrefixConfigurationIsHonored(): void
     {
         $prefix = 'myprefix';
-        $config = new Config(['table_prefix' => $prefix]);
-        $stmt   = $this->getMock('\PDOStatement');
-        $this->pdo->expects($this->once())
+        $config = new Config([
+            'table_prefix' => $prefix,
+        ]);
+        $stmt = $this->createMock(\PDOStatement::class);
+        $this->pdo->expects(static::once())
             ->method('prepare')
-            ->with($this->stringContains($prefix))
-            ->will($this->returnValue($stmt));
+            ->with(static::stringContains($prefix))
+            ->willReturn($stmt);
 
         (new PdoAdapter($this->pdo, $config))->write('somefile.txt', '', $this->emptyConfig);
     }
 
-    public function testTablePrefixConfigurationWithBlankValue()
+    public function testTablePrefixConfigurationWithBlankValue(): void
     {
         $default = 'flysystem';
-        $prefix  = '';
-        $config  = new Config(['table_prefix' => $prefix]);
-        $stmt    = $this->getMock('\PDOStatement');
-        $this->pdo->expects($this->once())
+        $prefix = '';
+        $config = new Config([
+            'table_prefix' => $prefix,
+        ]);
+        $stmt = $this->createMock(\PDOStatement::class);
+        $this->pdo->expects(static::once())
             ->method('prepare')
-            ->with($this->stringContains($default))
-            ->will($this->returnValue($stmt));
+            ->with(static::stringContains($default))
+            ->willReturn($stmt);
 
         (new PdoAdapter($this->pdo, $config))->write('somefile.txt', '', $this->emptyConfig);
     }
 
-    public function testWrite()
+    public function testWrite(): void
     {
         $this->setupBasicDbResponse();
 
-        $path    = '/some/path/to/file.txt';
+        $pathId = rand(1, 1000);
+
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn($pathId);
+
+        $path = '/some/path/to/file.txt';
         $content = 'Test Content';
-        $meta    = $this->adapter
+        $meta = $this->adapter
             ->write($path, $content, $this->emptyConfig);
 
         $expected = [
-            'type'       => 'file',
-            'path'       => $path,
+            'type' => 'file',
+            'path' => $path,
             'visibility' => 'public',
-            'size'       => strlen($content),
-            'timestamp'  => time(), // this is going to bite me in the arse!
-            'path_id'    => null,
-            'mimetype'   => 'text/plain'
+            'size' => strlen($content),
+            'timestamp' => time(), // this is going to bite me in the arse!
+            'path_id' => $pathId,
+            'mimetype' => 'text/plain',
         ];
-        $this->assertEquals($expected, $meta);
+        static::assertEquals($expected, $meta);
     }
 
-    public function testWriteWithDbFailure()
+    public function testWriteWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
-            ->write('/file.txt', null, $this->emptyConfig);
-        $this->assertFalse($meta);
+            ->write('/file.txt', '', $this->emptyConfig);
+        static::assertFalse($meta);
     }
 
-    public function testWriteDetectsMimetypeByExtension()
+    public function testWriteDetectsMimetypeByExtension(): void
     {
         $this->setupBasicDbResponse();
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
+
         $meta = $this->adapter
             ->write(
                 '/example.json',
@@ -122,98 +140,115 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
                 $this->emptyConfig
             );
 
-        $this->assertEquals('application/json', $meta['mimetype']);
+        static::assertEquals('application/json', $meta['mimetype']);
     }
 
-    public function testWriteDetectsMimetypeByContent()
+    public function testWriteDetectsMimetypeByContent(): void
     {
         $this->setupBasicDbResponse();
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
+
         $meta = $this->adapter
             ->write(
                 '/missing-extension',
-                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='), // 1x1 trans gif
+                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
                 $this->emptyConfig
             );
 
-        $this->assertEquals('image/gif', $meta['mimetype']);
+        static::assertEquals('image/gif', $meta['mimetype']);
     }
 
-    public function testWriteToStream()
+    public function testWriteToStream(): void
     {
         $this->setupBasicDbResponse();
 
-        $path    = '/some/path/to/file.txt';
+        $pathId = rand(1, 1000);
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn($pathId);
+
+        $path = '/some/path/to/file.txt';
         $content = 'Test File';
-        $handle  = $this->createTempResource($content);
-        $meta    = $this->adapter
+        $handle = $this->createTempResource($content);
+        $meta = $this->adapter
             ->writeStream($path, $handle, $this->emptyConfig);
 
         $expected = [
-            'type'       => 'file',
-            'path'       => $path,
+            'type' => 'file',
+            'path' => $path,
             'visibility' => 'public',
-            'size'       => strlen($content),
-            'timestamp'  => time(), // this is going to bite me in the arse!
-            'path_id'    => null,
-            'mimetype'   => 'text/plain'
+            'size' => strlen($content),
+            'timestamp' => time(), // this is going to bite me in the arse!
+            'path_id' => $pathId,
+            'mimetype' => 'text/plain',
         ];
-        $this->assertEquals($expected, $meta);
+        static::assertEquals($expected, $meta);
     }
 
-    public function testWriteToStreamWithDbFailure()
+    public function testWriteToStreamWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
             ->writeStream('/file.txt', null, $this->emptyConfig);
-        $this->assertFalse($meta);
+        static::assertFalse($meta);
     }
 
-    public function testWriteToStreamDetectsMimetypeByExtension()
+    public function testWriteToStreamDetectsMimetypeByExtension(): void
     {
         $this->setupBasicDbResponse();
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
+
         $handle = $this->createTempResource();
-        $meta   = $this->adapter
+        $meta = $this->adapter
             ->writeStream(
                 '/example.json',
                 $handle,
                 $this->emptyConfig
             );
 
-        $this->assertEquals('application/json', $meta['mimetype']);
+        static::assertEquals('application/json', $meta['mimetype']);
     }
 
     /**
      * This test documents the intended behaviour. The adapter attempts at no point, when using streams,
      * to load the file into memory.
      */
-    public function testWriteToStreamFailsToDetectMimetypeByContent()
+    public function testWriteToStreamFailsToDetectMimetypeByContent(): void
     {
         $this->setupBasicDbResponse();
-        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='); // 1x1 transparent gif
-        $handle  = $this->createTempResource($content);
-        $meta    = $this->adapter
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
+
+        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
+        $handle = $this->createTempResource($content);
+        $meta = $this->adapter
             ->writeStream(
                 '/missing-extension',
                 $handle,
                 $this->emptyConfig
             );
 
-        $this->assertNotEquals('image/gif', $meta['mimetype']);
+        static::assertNotEquals('image/gif', $meta['mimetype']);
     }
 
-    public function testUpdate()
+    public function testUpdate(): void
     {
-        $path    = '/some/path/to/file.txt';
+        $path = '/some/path/to/file.txt';
         $content = 'Test Content';
-        $data    = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+        $data = [
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -221,77 +256,77 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $meta = $this->adapter
             ->update($path, $content, $this->emptyConfig);
 
-        $this->assertEquals(strlen($content), $meta['size']);
+        static::assertEquals(strlen($content), $meta['size']);
     }
 
-    public function testUpdateWithDbFailure()
+    public function testUpdateWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
             ->update('/some/path/to/file.txt', 'Test Content', $this->emptyConfig);
 
-        $this->assertFalse($meta);
+        static::assertFalse($meta);
     }
 
-    public function testUpdateDetectsMimetypeByExtension()
+    public function testUpdateDetectsMimetypeByExtension(): void
     {
         $path = '/example.json';
         $data = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
         $meta = $this->adapter
             ->update($path, '', $this->emptyConfig);
 
-        $this->assertEquals('application/json', $meta['mimetype']);
+        static::assertEquals('application/json', $meta['mimetype']);
     }
 
-    public function testUpdateDetectsMimetypeByContent()
+    public function testUpdateDetectsMimetypeByContent(): void
     {
         $path = '/missing-extension';
         $data = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
         $meta = $this->adapter
             ->update(
                 $path,
-                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='), // 1x1 trans gif
+                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
                 $this->emptyConfig
             );
 
-        $this->assertEquals('image/gif', $meta['mimetype']);
+        static::assertEquals('image/gif', $meta['mimetype']);
     }
 
-    public function testUpdateToStream()
+    public function testUpdateToStream(): void
     {
-        $path    = '/some/path/to/file.txt';
+        $path = '/some/path/to/file.txt';
         $content = 'Test Content';
-        $data    = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+        $data = [
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
@@ -299,524 +334,525 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         $meta = $this->adapter
             ->updateStream($path, $content, $this->emptyConfig);
 
-        $this->assertEquals(strlen($content), $meta['size']);
+        static::assertEquals(strlen($content), $meta['size']);
     }
 
-    public function testUpdateToStreamWithDbFailure()
+    public function testUpdateToStreamWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
             ->updateStream('/some/path/to/file.txt', 'Test Content', $this->emptyConfig);
 
-        $this->assertFalse($meta);
+        static::assertFalse($meta);
     }
 
-    public function testUpdateToStreamDetectsMimetypeByExtension()
+    public function testUpdateToStreamDetectsMimetypeByExtension(): void
     {
         $path = '/example.json';
         $data = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
         $handle = $this->createTempResource();
-        $meta   = $this->adapter
+        $meta = $this->adapter
             ->updateStream($path, $handle, $this->emptyConfig);
 
-        $this->assertEquals('application/json', $meta['mimetype']);
+        static::assertEquals('application/json', $meta['mimetype']);
     }
 
-    public function testUpdateToStreamFailsToDetectsMimetypeByContent()
+    public function testUpdateToStreamFailsToDetectsMimetypeByContent(): void
     {
         $path = '/missing-extension';
         $data = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => $path,
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 214454,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
+            'update_ts' => date('Y-m-d H:i:s'),
         ];
 
         $this->setupDbFetchResponse($data);
-        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='); // 1x1 transparent gif
-        $handle  = $this->createTempResource($content);
-        $meta    = $this->adapter
+        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
+        $handle = $this->createTempResource($content);
+        $meta = $this->adapter
             ->updateStream($path, $handle, $this->emptyConfig);
 
-        $this->assertNotEquals('image/gif', $meta['mimetype']);
+        static::assertNotEquals('image/gif', $meta['mimetype']);
     }
 
-    public function testRenameFile()
+    public function testRenameFile(): void
     {
-        $path    = '/the-old-name.asp';
+        $path = '/the-old-name.asp';
         $newName = '/the-new-name.php';
         $this->setupDbFetchResponse([
-            'path_id'    => 123,
-            'path'       => $path,
-            'type'       => 'file',
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
             'visibility' => 'public',
-            'size'       => 2341,
-            'update_ts'  => date('Y-m-d H:i:s'),
-            'mimetype'   => 'text/plain'
+            'size' => 2341,
+            'update_ts' => date('Y-m-d H:i:s'),
+            'mimetype' => 'text/plain',
         ]);
 
-        $meta = $this->adapter->rename($path, $newName);
-        $this->assertEquals($newName, $meta['path']);
+        $actual = $this->adapter->rename($path, $newName);
+        static::assertTrue($actual);
     }
 
-    public function testRenameWithDbFailure()
+    public function testRenameWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
-        $meta = $this->adapter->rename('/the-old-name.asp', '/the-new-name.php');
-        $this->assertFalse($meta);
+        $actual = $this->adapter->rename('/the-old-name.asp', '/the-new-name.php');
+        static::assertFalse($actual);
     }
 
-    public function testRenameDirectory()
+    public function testRenameDirectory(): void
     {
-        $path    = '/the-old-name';
+        $path = '/the-old-name';
         $newName = '/the-new-name';
         $this->setupDbMultiCall([
             [
                 'method' => 'fetch',
                 'response' => [
-                    'path_id'    => 123,
-                    'path'       => $path,
-                    'type'       => 'dir',
-                    'update_ts'  => date('Y-m-d H:i:s')
-                ]
+                    'path_id' => 123,
+                    'path' => $path,
+                    'type' => 'dir',
+                    'update_ts' => date('Y-m-d H:i:s'),
+                ],
             ], [
                 'method' => 'fetchAll',
                 'response' => [
                     [
-                        'path_id'    => 1234,
-                        'path'       => $path . '/somefile.txt',
-                        'type'       => 'file',
+                        'path_id' => 1234,
+                        'path' => $path . '/somefile.txt',
+                        'type' => 'file',
                         'visibility' => 'public',
-                        'size'       => 2341,
-                        'update_ts'  => date('Y-m-d H:i:s'),
-                        'mimetype'   => 'text/plain'
-                    ]
-                ]
-            ]
+                        'size' => 2341,
+                        'update_ts' => date('Y-m-d H:i:s'),
+                        'mimetype' => 'text/plain',
+                    ],
+                ],
+            ],
         ]);
 
-        $meta = $this->adapter->rename($path, $newName);
-        $this->assertEquals($newName, $meta['path']);
+        $actual = $this->adapter->rename($path, $newName);
+        static::assertTrue($actual);
     }
 
-    public function testCopy()
+    public function testCopy(): void
     {
-        $path    = '/the-old-name.txt';
+        $path = '/the-old-name.txt';
         $newpath = '/the-new-name.txt';
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'path'          => $path,
-            'type'          => 'file',
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 2341,
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 2341,
             'is_compressed' => 1,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn(rand(1, 1000));
 
-        $meta = $this->adapter->copy($path, $newpath);
-        $this->assertEquals($meta['path'], $newpath);
+        $actual = $this->adapter->copy($path, $newpath);
+        static::assertTrue($actual);
     }
 
-    public function testCopyFailsToFindPath()
+    public function testCopyFailsToFindPath(): void
     {
-        $path    = '/the-old-name.txt';
+        $path = '/the-old-name.txt';
         $newpath = '/the-new-name.txt';
         $this->setupBasicDbResponse(false);
 
-        $meta = $this->adapter->copy($path, $newpath);
-        $this->assertFalse($meta);
+        $actual = $this->adapter->copy($path, $newpath);
+        static::assertFalse($actual);
     }
 
-    public function testCopyDoesntCopyModifiedTime()
+    public function testDelete(): void
     {
-        $time    = strtotime('yesterday');
-        $path    = '/the-old-name.txt';
-        $newpath = '/the-new-name.txt';
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'path'          => $path,
-            'type'          => 'file',
-            'mimetype'      => 'text/plain',
-            'visibility'    => 'public',
-            'size'          => 2341,
-            'is_compressed' => 1,
-            'update_ts'     => date('Y-m-d H:i:s', $time)
+            'type' => 'file',
+            'path_id' => 123,
         ]);
-
-        $meta = $this->adapter->copy($path, $newpath);
-        $this->assertGreaterThan($time, $meta['timestamp']);
+        static::assertTrue($this->adapter->delete('/some-file.txt'));
     }
 
-    public function testDelete()
+    public function testDeleteWithNonFilePath(): void
     {
-        $this->setupDbFetchResponse(['type' => 'file', 'path_id' => 123]);
-        $this->assertTrue($this->adapter->delete('/some-file.txt'));
+        $this->setupDbFetchResponse([
+            'type' => 'dir',
+            'path_id' => 123,
+        ]);
+        static::assertFalse($this->adapter->delete('/some-file.txt'));
     }
 
-    public function testDeleteWithNonFilePath()
-    {
-        $this->setupDbFetchResponse(['type' => 'dir', 'path_id' => 123]);
-        $this->assertFalse($this->adapter->delete('/some-file.txt'));
-    }
-
-    public function testDeleteWithDbFailure()
+    public function testDeleteWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
-        $this->assertFalse($this->adapter->delete('/some-file.txt'));
+        static::assertFalse($this->adapter->delete('/some-file.txt'));
     }
 
-    public function testDeleteEmptyDirectory()
+    public function testDeleteEmptyDirectory(): void
     {
         $this->setupDbMultiCall([
             [
-                'method'   => 'fetch',
-                'response' => ['type' => 'dir', 'path_id' => 123]
-            ], [
-                'method'   => 'fetchAll',
-                'response' => []
-            ]
-        ]);
-        $this->assertTrue($this->adapter->deleteDir('/some-directory'));
-    }
-
-    public function testDeleteDirectoryWithChildren()
-    {
-        $this->setupDbMultiCall([
-            [
-                'method'   => 'fetch',
+                'method' => 'fetch',
                 'response' => [
-                    'type'      => 'dir',
-                    'path_id'   => 123,
-                    'path'      => '/path/to',
-                    'update_ts' => date('Y-m-d H:i:s')
-                ]
+                    'type' => 'dir',
+                    'path_id' => 123,
+                ],
             ], [
-                'method'   => 'fetchAll',
+                'method' => 'fetchAll',
+                'response' => [],
+            ],
+        ]);
+        static::assertTrue($this->adapter->deleteDir('/some-directory'));
+    }
+
+    public function testDeleteDirectoryWithChildren(): void
+    {
+        $this->setupDbMultiCall([
+            [
+                'method' => 'fetch',
+                'response' => [
+                    'type' => 'dir',
+                    'path_id' => 123,
+                    'path' => '/path/to',
+                    'update_ts' => date('Y-m-d H:i:s'),
+                ],
+            ], [
+                'method' => 'fetchAll',
                 'response' => [
                     [
-                        'type'       => 'file',
-                        'path_id'    => 321,
-                        'path'       => '/path/to/file.txt',
-                        'mimetype'   => 'text/plain',
+                        'type' => 'file',
+                        'path_id' => 321,
+                        'path' => '/path/to/file.txt',
+                        'mimetype' => 'text/plain',
                         'visibility' => 'public',
-                        'size'       => 1234,
-                        'update_ts'  => date('Y-m-d H:i:s')
-                    ]
-                ]
-            ]
+                        'size' => 1234,
+                        'update_ts' => date('Y-m-d H:i:s'),
+                    ],
+                ],
+            ],
         ]);
-        $this->assertTrue($this->adapter->deleteDir('/some-directory'));
+        static::assertTrue($this->adapter->deleteDir('/some-directory'));
     }
 
-    public function testDeleteDirWithNonDirectoryPath()
+    public function testDeleteDirWithNonDirectoryPath(): void
     {
-        $this->setupDbFetchResponse(['type' => 'file', 'path_id' => 123]);
-        $this->assertFalse($this->adapter->deleteDir('/some-file.txt'));
+        $this->setupDbFetchResponse([
+            'type' => 'file',
+            'path_id' => 123,
+        ]);
+        static::assertFalse($this->adapter->deleteDir('/some-file.txt'));
     }
 
-    public function testDeleteDirWithDbFailure()
+    public function testDeleteDirWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
-        $this->assertFalse($this->adapter->deleteDir('/some-directory'));
+        static::assertFalse($this->adapter->deleteDir('/some-directory'));
     }
 
-    public function testCreateDir()
+    public function testCreateDir(): void
     {
         $pathId = 12345;
         $this->setupBasicDbResponse();
-        $this->pdo->expects($this->any())
-            ->method('lastInsertId')
-            ->will($this->returnValue($pathId));
+        $this->pdo->method('lastInsertId')
+            ->willReturn($pathId);
 
         $meta = $this->adapter->createDir('/path', $this->emptyConfig);
-        $this->assertEquals($pathId, $meta['path_id']);
+        static::assertEquals($pathId, $meta['path_id']);
     }
 
-    public function testCreateDirWithAdditionalFields()
+    public function testCreateDirWithAdditionalFields(): void
     {
         $pathId = 12345;
         $this->setupBasicDbResponse();
-        $this->pdo->expects($this->any())
-            ->method('lastInsertId')
-            ->will($this->returnValue($pathId));
+        $this->pdo->method('lastInsertId')
+            ->willReturn($pathId);
 
         $owner = 'exampleFoo';
-        $meta = $this->adapter->createDir('/path', new Config(['meta' => ['owner' => $owner]]));
-        $this->assertArrayHasKey('meta', $meta);
-        $this->assertArrayHasKey('owner', $meta['meta']);
-        $this->assertEquals($owner, $meta['meta']['owner']);
+        $meta = $this->adapter->createDir('/path', new Config([
+            'meta' => [
+                'owner' => $owner,
+            ],
+        ]));
+        static::assertArrayHasKey('meta', $meta);
+        static::assertArrayHasKey('owner', $meta['meta']);
+        static::assertEquals($owner, $meta['meta']['owner']);
     }
 
-    public function testCreateDirWithDbFailure()
+    public function testCreateDirWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter->createDir('/path', $this->emptyConfig);
-        $this->assertFalse($meta);
+        static::assertFalse($meta);
     }
 
-    public function testSetVisibility()
+    public function testSetVisibility(): void
     {
         $path = '/path/to/file.txt';
         $this->setupDbFetchResponse([
-            'path_id'    => 123,
-            'path'       => $path,
-            'type'       => 'file',
-            'mimetype'   => 'text/plain',
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
             'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'       => 1234,
-            'update_ts'  => date('Y-m-d H:i:s')
+            'size' => 1234,
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
         $meta = $this->adapter
             ->setVisibility('/path/to/file.txt', AdapterInterface::VISIBILITY_PRIVATE);
-        $this->assertNotFalse($meta);
+        static::assertNotFalse($meta);
     }
 
-    public function testSetVisibilityWithDbFailure()
+    public function testSetVisibilityWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter
             ->setVisibility('/path/to/file.txt', AdapterInterface::VISIBILITY_PRIVATE);
-        $this->assertFalse($meta);
+        static::assertFalse($meta);
     }
 
-    public function testHas()
+    public function testHas(): void
     {
         $stmt = $this->setupBasicDbResponse();
-        $stmt->expects($this->any())
-            ->method('fetchColumn')
-            ->will($this->returnValue(1));
-        $this->assertTrue($this->adapter->has('/this/path'));
+        $stmt->method('fetchColumn')
+            ->willReturn(1);
+        static::assertTrue($this->adapter->has('/this/path'));
     }
 
-    public function testHasWithDbFailure()
+    public function testHasWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
-        $this->assertFalse($this->adapter->has('/this/path'));
+        static::assertFalse($this->adapter->has('/this/path'));
     }
 
-    public function testReadReturnsContents()
+    public function testReadReturnsContents(): void
     {
         $path = '/path/to/file.txt';
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'path'          => $path,
-            'type'          => 'file',
-            'mimetype'      => 'text/plain',
-            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'          => 1234,
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => 1234,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
         $meta = $this->adapter->read($path);
-        $this->assertArrayHasKey('contents', $meta);
+        static::assertArrayHasKey('contents', $meta);
     }
 
-    public function testReadWithDbFailure()
+    public function testReadWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter->read('/path/to/file.txt');
-        $this->assertFalse($meta);
+        static::assertFalse($meta);
     }
 
-    public function testReadStreamReturnsStream()
+    public function testReadStreamReturnsStream(): void
     {
         $path = '/path/to/file.txt';
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'path'          => $path,
-            'type'          => 'file',
-            'mimetype'      => 'text/plain',
-            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'          => 1234,
+            'path_id' => 123,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => 1234,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
         $meta = $this->adapter->readStream($path);
-        $this->assertTrue(is_resource($meta['stream']));
+        static::assertTrue(is_resource($meta['stream']));
     }
 
-    public function testReadStreamWithDbFailure()
+    public function testReadStreamWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $meta = $this->adapter->readStream('/path/to/file.txt');
-        $this->assertFalse($meta);
+        static::assertFalse($meta);
     }
 
-    public function testListContents()
+    public function testListContents(): void
     {
         $this->setupDbFetchResponse(
             [
                 [
-                    'path_id'       => 123,
-                    'path'          => '/path/file.txt',
-                    'type'          => 'file',
-                    'mimetype'      => 'text/plain',
-                    'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-                    'size'          => 1234,
+                    'path_id' => 123,
+                    'path' => '/path/file.txt',
+                    'type' => 'file',
+                    'mimetype' => 'text/plain',
+                    'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+                    'size' => 1234,
                     'is_compressed' => false,
-                    'update_ts'     => date('Y-m-d H:i:s')
-                ]
+                    'update_ts' => date('Y-m-d H:i:s'),
+                ],
             ],
             'fetchAll'
         );
         $listing = $this->adapter->listContents('/path');
-        $this->assertCount(1, $listing);
+        static::assertCount(1, $listing);
     }
 
-    public function testListContentsWithEmtpyResults()
+    public function testListContentsWithEmtpyResults(): void
     {
         $this->setupDbFetchResponse([], 'fetchAll');
         $listing = $this->adapter->listContents('/path');
-        $this->assertEmpty($listing);
+        static::assertEmpty($listing);
     }
 
-    public function testListContentsWithDbFailure()
+    public function testListContentsWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
         $listing = $this->adapter->listContents('/path');
-        $this->assertEmpty($listing);
+        static::assertEmpty($listing);
     }
 
-    public function testGetMetadataHasCorrectKeysForFile()
+    public function testGetMetadataHasCorrectKeysForFile(): void
     {
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => '/path/file.txt',
-            'mimetype'      => 'text/plain',
-            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'          => 1234,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => '/path/file.txt',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => 1234,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
 
-        $meta           = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp'];
+        $meta = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
-        $this->assertEmpty($unexpectedKeys);
+        static::assertEmpty($unexpectedKeys);
     }
 
-    public function testGetMetadataHasCorrectKeysForFileWithAdditionalFields()
+    public function testGetMetadataHasCorrectKeysForFileWithAdditionalFields(): void
     {
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => '/path/file.txt',
-            'mimetype'      => 'text/plain',
-            'visibility'    => AdapterInterface::VISIBILITY_PRIVATE,
-            'size'          => 1234,
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => '/path/file.txt',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => 1234,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s'),
-            'expiry'        => date('Y-m-d H:i:s', strtotime('+2 days')),
-            'meta'          => json_encode(['owner' => 'exampleFoo']),
+            'update_ts' => date('Y-m-d H:i:s'),
+            'expiry' => date('Y-m-d H:i:s', strtotime('+2 days')),
+            'meta' => json_encode([
+                'owner' => 'exampleFoo',
+            ]),
         ]);
 
-        $meta           = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp', 'expiry', 'meta'];
+        $meta = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp', 'expiry', 'meta'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
 
-        $this->assertEmpty($unexpectedKeys);
+        static::assertEmpty($unexpectedKeys);
     }
 
-    public function testGetMetadataNormalizesDataForDirectory()
+    public function testGetMetadataNormalizesDataForDirectory(): void
     {
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'type'          => 'dir',
-            'path'          => '/path/file.txt',
-            'mimetype'      => null,
-            'visibility'    => null,
-            'size'          => null,
+            'path_id' => 123,
+            'type' => 'dir',
+            'path' => '/path/file.txt',
+            'mimetype' => null,
+            'visibility' => null,
+            'size' => null,
             'is_compressed' => 0,
-            'update_ts'     => date('Y-m-d H:i:s')
+            'update_ts' => date('Y-m-d H:i:s'),
         ]);
 
-        $meta           = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'timestamp'];
+        $meta = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys = ['path_id', 'type', 'path', 'timestamp'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
-        $this->assertEmpty($unexpectedKeys);
+        static::assertEmpty($unexpectedKeys);
     }
 
-    public function testGetMetadataNormalizesDataForDirectoryWithAdditionalFields()
+    public function testGetMetadataNormalizesDataForDirectoryWithAdditionalFields(): void
     {
         $this->setupDbFetchResponse([
-            'path_id'       => 123,
-            'type'          => 'dir',
-            'path'          => '/path/file.txt',
-            'mimetype'      => null,
-            'visibility'    => null,
-            'size'          => null,
+            'path_id' => 123,
+            'type' => 'dir',
+            'path' => '/path/file.txt',
+            'mimetype' => null,
+            'visibility' => null,
+            'size' => null,
             'is_compressed' => 0,
-            'update_ts'     => date('Y-m-d H:i:s'),
-            'expiry'        => date('Y-m-d H:i:s', strtotime('+2 days')),
-            'meta'          => json_encode(['owner' => 'exampleFoo']),
+            'update_ts' => date('Y-m-d H:i:s'),
+            'expiry' => date('Y-m-d H:i:s', strtotime('+2 days')),
+            'meta' => json_encode([
+                'owner' => 'exampleFoo',
+            ]),
         ]);
 
-        $meta           = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys   = ['path_id', 'type', 'path', 'timestamp', 'expiry', 'meta'];
+        $meta = $this->adapter->getMetadata('/path/file.txt');
+        $expectedKeys = ['path_id', 'type', 'path', 'timestamp', 'expiry', 'meta'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
-        $this->assertEmpty($unexpectedKeys);
+        static::assertEmpty($unexpectedKeys);
     }
 
-    public function testGetMetadataWithDbFailure()
+    public function testGetMetadataWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
-        $this->assertFalse($this->adapter->getMetadata('/path'));
+        static::assertFalse($this->adapter->getMetadata('/path'));
     }
 
     /**
-     * @param array $rowData
-     * @param string $attribute
      * @param mixed $expectValue
      * @dataProvider individualAttributeGetMethodsDataProvider
      */
-    public function testIndividualAttributeGetMethods(array $rowData, $attribute, $expectValue)
+    public function testIndividualAttributeGetMethods(array $rowData, string $attribute, $expectValue): void
     {
         $method = 'get' . ucfirst($attribute);
         $this->setupDbFetchResponse($rowData);
-        $this->assertEquals($expectValue, $this->adapter->$method($rowData['path'])[$attribute]);
+        static::assertEquals($expectValue, $this->adapter->{$method}($rowData['path'])[$attribute]);
     }
 
-    public function individualAttributeGetMethodsDataProvider()
+    public function individualAttributeGetMethodsDataProvider(): array
     {
-        $size       = 1234;
-        $mimetype   = 'text/plain';
-        $timestamp  = time();
+        $size = 1234;
+        $mimetype = 'text/plain';
+        $timestamp = time();
         $visibility = AdapterInterface::VISIBILITY_PUBLIC;
-        $rowData    = [
-            'path_id'       => 123,
-            'type'          => 'file',
-            'path'          => '/path/file.txt',
-            'mimetype'      => $mimetype,
-            'visibility'    => $visibility,
-            'size'          => $size,
+        $rowData = [
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => '/path/file.txt',
+            'mimetype' => $mimetype,
+            'visibility' => $visibility,
+            'size' => $size,
             'is_compressed' => false,
-            'update_ts'     => date('Y-m-d H:i:s', $timestamp)
+            'update_ts' => date('Y-m-d H:i:s', $timestamp),
         ];
         return [
             [$rowData, 'size', $size],
             [$rowData, 'mimetype', $mimetype],
             [$rowData, 'timestamp', $timestamp],
-            [$rowData, 'visibility', $visibility]
+            [$rowData, 'visibility', $visibility],
         ];
     }
 
+    /**
+     * @return resource
+     */
     protected function createTempResource($content = '')
     {
         $handle = fopen('php://temp', 'w+b');
@@ -825,45 +861,50 @@ class PdoAdapterTest extends \PHPUnit_Framework_TestCase
         return $handle;
     }
 
-    protected function setupBasicDbResponse($response = true)
+    /**
+     * @param mixed $response
+     * @return \PDOStatement|MockObject
+     */
+    protected function setupBasicDbResponse($response = true): \PDOStatement
     {
-        $stmt = $this->getMock('\PDOStatement');
-        $stmt->expects($this->any())
-            ->method('execute')
-            ->will($this->returnValue($response));
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('execute')
+            ->willReturn($response);
 
-        $this->pdo->expects($this->any())
-            ->method('prepare')
-            ->will($this->returnValue($stmt));
+        $this->pdo->method('prepare')
+            ->willReturn($stmt);
 
         return $stmt;
     }
 
-    protected function setupDbFetchResponse($response, $method = 'fetch')
+    /**
+     * @return \PDOStatement|MockObject
+     */
+    protected function setupDbFetchResponse(array $response, $method = 'fetch'): \PDOStatement
     {
         return $this->setupDbMultiCall([
             [
-                'method'   => $method,
-                'response' => $response
-            ]
+                'method' => $method,
+                'response' => $response,
+            ],
         ]);
     }
 
-    public function setupDbMultiCall($calls)
+    /**
+     * @return \PDOStatement|MockObject
+     */
+    public function setupDbMultiCall(array $calls): \PDOStatement
     {
-        $stmt = $this->getMock('\PDOStatement');
-        $stmt->expects($this->any())
-            ->method('execute')
-            ->will($this->returnValue(true));
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('execute')
+            ->willReturn(true);
         foreach ($calls as $call) {
-            $stmt->expects($this->any())
-                ->method($call['method'])
-                ->will($this->returnValue($call['response']));
+            $stmt->method($call['method'])
+                ->willReturn($call['response']);
         }
 
-        $this->pdo->expects($this->any())
-            ->method('prepare')
-            ->will($this->returnValue($stmt));
+        $this->pdo->method('prepare')
+            ->willReturn($stmt);
 
         return $stmt;
     }

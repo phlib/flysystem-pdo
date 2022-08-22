@@ -1,30 +1,19 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Phlib\Flysystem\Pdo\Tests;
 
 use League\Flysystem\AdapterInterface;
-use Phlib\Flysystem\Pdo\PdoAdapter;
 use League\Flysystem\Config;
-use PHPUnit_Extensions_Database_DataSet_IDataSet;
-use PHPUnit_Extensions_Database_DB_IDatabaseConnection;
-use PHPUnit_Extensions_Database_DataSet_ArrayDataSet as ArrayDataSet;
+use Phlib\Flysystem\Pdo\PdoAdapter;
 
 /**
  * @group integration
  */
-class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
+class IntegrationTest extends IntegrationTestCase
 {
     use MemoryTestTrait;
-
-    /**
-     * @var \PDO
-     */
-    protected static $pdo;
-
-    /**
-     * @var string
-     */
-    protected static $driver;
 
     /**
      * @var array
@@ -46,33 +35,20 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
      */
     protected $tempHandles = [];
 
-    public static function setUpBeforeClass()
+    public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
+
         if (!getenv('INTEGRATION_ENABLED')) {
             // Integration test not enabled
             return;
         }
 
-        // @todo allow tests to use alternative to MySQL
-        $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
-        static::$driver = 'mysql';
-        static::$pdo = new \PDO(
-            $dsn,
-            getenv('DB_USERNAME'),
-            getenv('DB_PASSWORD'),
-            [
-                \PDO::ATTR_TIMEOUT => 2,
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
-            ]
-        );
-
         // create files
-        $tmpDir             = sys_get_temp_dir() . DIRECTORY_SEPARATOR;
-        $emptyFilename      = $tmpDir . uniqid('flysystempdo-test-00B-', true);
-        $tenByteFilename    = $tmpDir . uniqid('flysystempdo-test-10B-', true);
-        $tenKayFilename     = $tmpDir . uniqid('flysystempdo-test-10K-', true);
+        $tmpDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR;
+        $emptyFilename = $tmpDir . uniqid('flysystempdo-test-00B-', true);
+        $tenByteFilename = $tmpDir . uniqid('flysystempdo-test-10B-', true);
+        $tenKayFilename = $tmpDir . uniqid('flysystempdo-test-10K-', true);
         $xlFilename = $tmpDir . uniqid('flysystempdo-test-xl-', true);
         static::fillFile($emptyFilename, 0);
         static::fillFile($tenByteFilename, 10);
@@ -86,10 +62,10 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         ];
     }
 
-    public static function tearDownAfterClass()
+    public static function tearDownAfterClass(): void
     {
         static::$driver = null;
-        static::$pdo    = null;
+        static::$pdo = null;
         foreach (static::$tempFiles as $file) {
             if (is_file($file)) {
                 unlink($file);
@@ -98,10 +74,10 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         parent::tearDownAfterClass();
     }
 
-    public function setUp()
+    protected function setUp(): void
     {
         if (!static::$pdo instanceof \PDO) {
-            $this->markTestSkipped();
+            static::markTestSkipped();
             return;
         }
 
@@ -110,13 +86,13 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->adapter = new PdoAdapter(static::$pdo);
 
         $config = [];
-        if (static::$driver == 'mysql') {
+        if (static::$driver === 'mysql') {
             $config['disable_mysql_buffering'] = true;
         }
         $this->emptyConfig = new Config($config);
     }
 
-    public function tearDown()
+    protected function tearDown(): void
     {
         foreach ($this->tempHandles as $tempHandle) {
             if (is_resource($tempHandle)) {
@@ -129,57 +105,29 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         parent::tearDown();
     }
 
-    /**
-     * @return PHPUnit_Extensions_Database_DB_IDatabaseConnection
-     */
-    public function getConnection()
-    {
-        return $this->createDefaultDBConnection(static::$pdo, getenv('DB_DATABASE'));
-    }
-
-    /**
-     * mysqldump -hdhost --xml -t -uroot -p dbname flysystem_chunk flysystem_path > tests/_files/mysql-integration.xml
-     * @return PHPUnit_Extensions_Database_DataSet_IDataSet
-     * @throws \Exception
-     */
-    protected function getDataSet()
-    {
-        switch (static::$driver) {
-            case 'mysql':
-                $dataSetFile = dirname(__FILE__) . '/_files/mysql-integration.xml';
-                return $this->createMySQLXMLDataSet($dataSetFile);
-            case 'sqlite':
-                $dataSetFile = dirname(__FILE__) . '/_files/sqlite-integration.xml';
-                return $this->createXMLDataSet($dataSetFile);
-            default:
-                $driver = static::$driver;
-                throw new \Exception("Missing data set for '{$driver}'");
-        }
-    }
-
-    public function testWritingEmptyFile()
+    public function testWritingEmptyFile(): void
     {
         $filename = static::$tempFiles['00B'];
-        $handle   = fopen($filename, 'r');
+        $handle = fopen($filename, 'r');
         $this->adapter->writeStream('/path/to/file.txt', $handle, $this->emptyConfig);
-        $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_chunk'));
+        static::assertRowCount(0, 'flysystem_chunk');
     }
 
     /**
-     * @param callable $fileCallback
-     * @param string $writeMethod
-     * @param string $readMethod
-     * @param Config $config
      * @dataProvider writtenAndReadAreTheSameFileDataProvider
      */
-    public function testWrittenAndReadAreTheSameFile($fileCallback, $writeMethod, $readMethod, $config)
-    {
+    public function testWrittenAndReadAreTheSameFile(
+        callable $fileCallback,
+        string $writeMethod,
+        string $readMethod,
+        Config $config
+    ): void {
         $filename = static::$tempFiles['10K'];
-        $file     = call_user_func($fileCallback, $filename);
+        $file = call_user_func($fileCallback, $filename);
 
         $path = '/path/to/file.txt';
-        $this->adapter->$writeMethod($path, $file, $config);
-        $meta = $this->adapter->$readMethod($path);
+        $this->adapter->{$writeMethod}($path, $file, $config);
+        $meta = $this->adapter->{$readMethod}($path);
 
         if (is_resource($file)) {
             rewind($file);
@@ -189,13 +137,17 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
             $meta['contents'] = stream_get_contents($meta['stream']);
         }
 
-        $this->assertEquals($file, $meta['contents']);
+        static::assertSame($file, $meta['contents']);
     }
 
-    public function writtenAndReadAreTheSameFileDataProvider()
+    public function writtenAndReadAreTheSameFileDataProvider(): array
     {
-        $compressionConfig  = new Config(['enable_compression' => true]);
-        $uncompressedConfig = new Config(['enable_compression' => false]);
+        $compressionConfig = new Config([
+            'enable_compression' => true,
+        ]);
+        $uncompressedConfig = new Config([
+            'enable_compression' => false,
+        ]);
         return [
             [[$this, 'createResource'], 'writeStream', 'readStream', $compressionConfig],
             [[$this, 'createResource'], 'writeStream', 'read', $compressionConfig],
@@ -209,22 +161,22 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
     }
 
     /**
-     * @param callable $fileCallback
-     * @param string $updateMethod
-     * @param string $readMethod
-     * @param Config $config
      * @dataProvider updatedAndReadAreTheSameFileDataProvider
      */
-    public function testUpdatedAndReadAreTheSameFile($fileCallback, $updateMethod, $readMethod, $config)
-    {
+    public function testUpdatedAndReadAreTheSameFile(
+        callable $fileCallback,
+        string $updateMethod,
+        string $readMethod,
+        Config $config
+    ): void {
         $path = '/path/to/file.txt';
         $this->adapter->write($path, file_get_contents(static::$tempFiles['10B']), $this->emptyConfig);
 
         $filename = static::$tempFiles['10K'];
-        $file     = call_user_func($fileCallback, $filename);
+        $file = call_user_func($fileCallback, $filename);
 
-        $this->adapter->$updateMethod($path, $file, $config);
-        $meta = $this->adapter->$readMethod($path);
+        $this->adapter->{$updateMethod}($path, $file, $config);
+        $meta = $this->adapter->{$readMethod}($path);
 
         if (is_resource($file)) {
             rewind($file);
@@ -233,13 +185,17 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         if (isset($meta['stream'])) {
             $meta['contents'] = stream_get_contents($meta['stream']);
         }
-        $this->assertEquals($file, $meta['contents']);
+        static::assertSame($file, $meta['contents']);
     }
 
-    public function updatedAndReadAreTheSameFileDataProvider()
+    public function updatedAndReadAreTheSameFileDataProvider(): array
     {
-        $compressionConfig  = new Config(['enable_compression' => true]);
-        $uncompressedConfig = new Config(['enable_compression' => false]);
+        $compressionConfig = new Config([
+            'enable_compression' => true,
+        ]);
+        $uncompressedConfig = new Config([
+            'enable_compression' => false,
+        ]);
         return [
             [[$this, 'createResource'], 'updateStream', 'readStream', $compressionConfig],
             [[$this, 'createResource'], 'updateStream', 'read', $compressionConfig],
@@ -252,7 +208,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         ];
     }
 
-    public function testCopyingFile()
+    public function testCopyingFile(): void
     {
         $path1 = '/first.txt';
         $path2 = '/second.txt';
@@ -262,81 +218,84 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $meta1 = $this->adapter->read($path1);
         $meta2 = $this->adapter->read($path2);
 
-        $this->assertEquals($meta1['contents'], $meta2['contents']);
+        static::assertSame($meta1['contents'], $meta2['contents']);
     }
 
-    public function testCompressionIsSetOnThePath()
+    public function testCompressionIsSetOnThePath(): void
     {
         $filename = static::$tempFiles['10B'];
-        $file     = $this->createResource($filename);
-        $path     = '/path/to/file.txt';
-        $meta     = $this->adapter->writeStream($path, $file, new Config(['enable_compression' => true]));
+        $file = $this->createResource($filename);
+        $path = '/path/to/file.txt';
+        $meta = $this->adapter->writeStream($path, $file, new Config([
+            'enable_compression' => true,
+        ]));
 
-        $rows     = [['is_compressed' => 1]];
-        $sql      = "SELECT is_compressed FROM flysystem_path WHERE path_id = {$meta['path_id']}";
-        $expected = (new ArrayDataSet(['flysystem_path' => $rows]))->getTable('flysystem_path');
-        $actual   = $this->getConnection()->createQueryTable('flysystem_path', $sql);
+        $sql = "SELECT is_compressed FROM flysystem_path WHERE path_id = {$meta['path_id']}";
+        $actual = static::$pdo->query($sql)->fetchColumn();
 
-        $this->assertTablesEqual($expected, $actual);
+        static::assertSame('1', $actual);
     }
 
-    public function testCopyingPathMakesAccurateCopy()
+    public function testCopyingPathMakesAccurateCopy(): void
     {
         $origPath = '/path/to/file.txt';
-        $content  = file_get_contents(static::$tempFiles['10B']);
-        $origMeta = $this->adapter->write($origPath, $content, $this->emptyConfig);
+        $content = file_get_contents(static::$tempFiles['10B']);
+        $this->adapter->write($origPath, $content, $this->emptyConfig);
 
         $copyPath = '/path/to/copy.txt';
-        $copyMeta = $this->adapter->copy($origPath, $copyPath);
+        $this->adapter->copy($origPath, $copyPath);
 
-        $connection  = $this->getConnection();
-        $select      = 'SELECT type, path, mimetype, visibility, size, is_compressed FROM flysystem_path WHERE path_id = %d';
-        $origDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, [$origMeta['path_id']]));
-        $copyDataSet = $connection->createQueryTable('flysystem_path', sprintf($select, [$copyMeta['path_id']]));
+        $select = 'SELECT type, mimetype, visibility, size, is_compressed FROM flysystem_path WHERE path = "%s"';
+        $origDataSet = static::$pdo->query(sprintf($select, $origPath))->fetchAll();
+        $copyDataSet = static::$pdo->query(sprintf($select, $copyPath))->fetchAll();
 
-        $this->assertTablesEqual($origDataSet, $copyDataSet);
+        static::assertSame($origDataSet, $copyDataSet);
     }
 
-    public function testCopyingPathMakesAccurateCopyOfChunks()
+    public function testCopyingPathMakesAccurateCopyOfChunks(): void
     {
         $origPath = '/path/to/file.txt';
-        $content  = file_get_contents(static::$tempFiles['10B']);
-        $origMeta = $this->adapter->write($origPath, $content, $this->emptyConfig);
+        $content = file_get_contents(static::$tempFiles['10B']);
+        $uncompressedConfig = new Config([
+            'enable_compression' => false,
+        ]);
+        $this->adapter->write($origPath, $content, $uncompressedConfig);
 
         $copyPath = '/path/to/copy.txt';
-        $copyMeta = $this->adapter->copy($origPath, $copyPath);
+        $this->adapter->copy($origPath, $copyPath);
 
-        $connection  = $this->getConnection();
-        $select      = 'SELECT chunk_no, content FROM flysystem_chunk WHERE path_id = %d';
-        $origDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, [$origMeta['path_id']]));
-        $copyDataSet = $connection->createQueryTable('flysystem_chunk', sprintf($select, [$copyMeta['path_id']]));
+        $select = 'SELECT chunk_no, content FROM flysystem_chunk JOIN flysystem_path USING (path_id) WHERE path = "%s"';
+        $origDataSet = static::$pdo->query(sprintf($select, $origPath))->fetchAll();
+        $copyDataSet = static::$pdo->query(sprintf($select, $copyPath))->fetchAll();
 
-        $this->assertTablesEqual($origDataSet, $copyDataSet);
+        static::assertSame($origDataSet, $copyDataSet);
     }
 
-    public function testMemoryUsageOnWritingStream()
+    public function testMemoryUsageOnWritingStream(): void
     {
         $filename = static::$tempFiles['xl'];
-        $file     = fopen($filename, 'r');
-        $path     = '/path/to/file.txt';
+        $file = fopen($filename, 'r');
+        $path = '/path/to/file.txt';
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function() use ($path, $file) {
+        $this->memoryTest(function () use ($path, $file) {
             $this->adapter->writeStream($path, $file, $this->emptyConfig);
         }, $variation);
     }
 
-    public function testMemoryUsageOnReadingStreamWithBuffering()
+    public function testMemoryUsageOnReadingStreamWithBuffering(): void
     {
         $config = $this->emptyConfig;
-        if (static::$driver == 'mysql') {
-            $config = new Config(['enable_mysql_buffering' => true]);
+        if (static::$driver === 'mysql') {
+            $config = new Config([
+                'enable_mysql_buffering' => true,
+            ]);
         }
         $adapter = new PdoAdapter(static::$pdo, $config);
 
         $filename = static::$tempFiles['xl'];
-        $file     = fopen($filename, 'r');
-        $path     = '/path/to/file.txt';
+        $file = fopen($filename, 'r');
+        $path = '/path/to/file.txt';
 
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
@@ -346,19 +305,21 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }, $variation);
     }
 
-    public function testMemoryUsageOnReadingStreamWithoutBuffering()
+    public function testMemoryUsageOnReadingStreamWithoutBuffering(): void
     {
-        if (static::$driver != 'mysql') {
-            $this->markTestSkipped('Cannot test buffering on non mysql driver.');
+        if (static::$driver !== 'mysql') {
+            static::markTestSkipped('Cannot test buffering on non mysql driver.');
             return;
         }
 
-        $config  = new Config(['enable_mysql_buffering' => false]);
+        $config = new Config([
+            'enable_mysql_buffering' => false,
+        ]);
         $adapter = new PdoAdapter(static::$pdo, $config);
 
         $filename = static::$tempFiles['xl'];
-        $file     = fopen($filename, 'r');
-        $path     = '/path/to/file.txt';
+        $file = fopen($filename, 'r');
+        $path = '/path/to/file.txt';
 
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
@@ -368,7 +329,7 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         }, $variation);
     }
 
-    public function testMemoryUsageOnUpdateStream()
+    public function testMemoryUsageOnUpdateStream(): void
     {
         $path = '/path/to/file.txt';
         $file = fopen(static::$tempFiles['10K'], 'r');
@@ -378,37 +339,33 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $file = fopen(static::$tempFiles['xl'], 'r');
 
         $variation = 1048576; // 1MiB
-        $this->memoryTest(function() use ($path, $file) {
+        $this->memoryTest(function () use ($path, $file) {
             $this->adapter->updateStream($path, $file, $this->emptyConfig);
         }, $variation);
     }
 
     /**
-     * @param array $paths
-     * @param int $expectedRows
      * @dataProvider pathsDataProvider
      */
-    public function testAddingPaths(array $paths, $expectedRows)
+    public function testAddingPaths(array $paths, int $expectedRows): void
     {
         foreach ($paths as $path) {
-            if ($path['type'] == 'dir') {
+            if ($path['type'] === 'dir') {
                 $this->adapter->createDir($path['name'], $this->emptyConfig);
             } else {
                 $this->adapter->write($path['name'], '', $this->emptyConfig);
             }
         }
-        $this->assertEquals($expectedRows, $this->getConnection()->getRowCount('flysystem_path'));
+        static::assertRowCount($expectedRows, 'flysystem_path');
     }
 
     /**
-     * @param array $paths
-     * @param int $expectedRows
      * @dataProvider pathsDataProvider
      */
-    public function testListContentsMeetsExpectedOutput(array $paths, $expectedRows)
+    public function testListContentsMeetsExpectedOutput(array $paths, int $expectedRows): void
     {
         foreach ($paths as $path) {
-            if ($path['type'] == 'dir') {
+            if ($path['type'] === 'dir') {
                 $this->adapter->createDir($path['name'], $this->emptyConfig);
             } else {
                 $this->adapter->write($path['name'], '', $this->emptyConfig);
@@ -420,17 +377,35 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         $this->adapter->createDir('/not/that', $this->emptyConfig);
         $this->adapter->write('/not/this/too.txt', '', $this->emptyConfig);
 
-        $this->assertCount($expectedRows, $this->adapter->listContents('/test', true));
+        static::assertCount($expectedRows, $this->adapter->listContents('/test', true));
     }
 
-    public function pathsDataProvider()
+    public function pathsDataProvider(): array
     {
-        $dir1  = ['type' => 'dir', 'name' => '/test'];
-        $dir2  = ['type' => 'dir', 'name' => '/test/sub1'];
-        $dir3  = ['type' => 'dir', 'name' => '/test/sub2'];
-        $file1 = ['type' => 'file', 'name' => '/test/file1.txt'];
-        $file2 = ['type' => 'file', 'name' => '/test/file2.txt'];
-        $file3 = ['type' => 'file', 'name' => '/test/file3.txt'];
+        $dir1 = [
+            'type' => 'dir',
+            'name' => '/test',
+        ];
+        $dir2 = [
+            'type' => 'dir',
+            'name' => '/test/sub1',
+        ];
+        $dir3 = [
+            'type' => 'dir',
+            'name' => '/test/sub2',
+        ];
+        $file1 = [
+            'type' => 'file',
+            'name' => '/test/file1.txt',
+        ];
+        $file2 = [
+            'type' => 'file',
+            'name' => '/test/file2.txt',
+        ];
+        $file3 = [
+            'type' => 'file',
+            'name' => '/test/file3.txt',
+        ];
 
         return [
             [[$dir1], 1],
@@ -442,84 +417,84 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
             [[$dir1, $file1], 2],
             [[$dir1, $file1, $file2], 3],
             [[$dir1, $dir2, $file1], 3],
-            [[$dir1, $dir2, $dir3, $file1, $file2, $file3], 6]
+            [[$dir1, $dir2, $dir3, $file1, $file2, $file3], 6],
         ];
     }
 
-    public function testDeletingDirectoryClearsAllFiles()
+    public function testDeletingDirectoryClearsAllFiles(): void
     {
         $this->adapter->createDir('/test', $this->emptyConfig);
         $this->adapter->write('/test/file.txt', '', $this->emptyConfig);
 
-        $this->assertEquals(2, $this->getConnection()->getRowCount('flysystem_path'));
+        static::assertRowCount(2, 'flysystem_path');
         $this->adapter->deleteDir('/test');
-        $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_path'));
+        static::assertRowCount(0, 'flysystem_path');
     }
 
-    public function testDeletingFileClearsAllChunks()
+    public function testDeletingFileClearsAllChunks(): void
     {
         $file = file_get_contents(static::$tempFiles['xl']);
         $this->adapter->write('/test.txt', $file, $this->emptyConfig);
 
-        $this->assertGreaterThan(0, $this->getConnection()->getRowCount('flysystem_chunk'));
+        static::assertRowCount(8, 'flysystem_chunk');
         $this->adapter->delete('/test.txt');
-        $this->assertEquals(0, $this->getConnection()->getRowCount('flysystem_chunk'));
+        static::assertRowCount(0, 'flysystem_chunk');
     }
 
-    public function testReadingNonExistentPath()
+    public function testReadingNonExistentPath(): void
     {
-        $this->assertFalse($this->adapter->read('/path/does/not/exist.txt'));
+        static::assertFalse($this->adapter->read('/path/does/not/exist.txt'));
     }
 
-    public function testReadingStreamForNonExistentPath()
+    public function testReadingStreamForNonExistentPath(): void
     {
-        $this->assertFalse($this->adapter->readStream('/path/does/not/exist.txt'));
+        static::assertFalse($this->adapter->readStream('/path/does/not/exist.txt'));
     }
 
-    public function testHasForNonExistentPath()
+    public function testHasForNonExistentPath(): void
     {
-        $this->assertFalse($this->adapter->has('/path/does/not/exist.txt'));
+        static::assertFalse($this->adapter->has('/path/does/not/exist.txt'));
     }
 
-    public function testHasForExistingPath()
+    public function testHasForExistingPath(): void
     {
         $path = '/this/path/does/exist.txt';
         $this->adapter->write($path, 'some text', $this->emptyConfig);
-        $this->assertTrue($this->adapter->has($path));
+        static::assertTrue($this->adapter->has($path));
     }
 
-    public function testCopyingNonExistentPath()
+    public function testCopyingNonExistentPath(): void
     {
-        $this->assertFalse($this->adapter->copy('/this/does/not/exist.txt', '/my/new/path.txt'));
+        static::assertFalse($this->adapter->copy('/this/does/not/exist.txt', '/my/new/path.txt'));
     }
 
-    public function testSettingVisibility()
+    public function testSettingVisibility(): void
     {
         $path = '/test.txt';
-        $config = new Config(['visibility' => AdapterInterface::VISIBILITY_PUBLIC]);
+        $config = new Config([
+            'visibility' => AdapterInterface::VISIBILITY_PUBLIC,
+        ]);
         $meta = $this->adapter->write($path, 'Some Content', $config);
 
         $this->adapter->setVisibility($path, AdapterInterface::VISIBILITY_PRIVATE);
 
-        $rows     = [['visibility' => AdapterInterface::VISIBILITY_PRIVATE]];
-        $expected = (new ArrayDataSet(['flysystem_path' => $rows]))->getTable('flysystem_path');
-        $select   = "SELECT visibility FROM flysystem_path WHERE path_id = {$meta['path_id']}";
-        $actual   = $this->getConnection()->createQueryTable('flysystem_path', $select);
+        $select = "SELECT visibility FROM flysystem_path WHERE path_id = {$meta['path_id']}";
+        $actual = static::$pdo->query($select)->fetchColumn();
 
-        $this->assertTablesEqual($expected, $actual);
+        static::assertSame(AdapterInterface::VISIBILITY_PRIVATE, $actual);
     }
 
-    protected static function fillFile($filename, $sizeKb)
+    protected static function fillFile($filename, $sizeKb): void
     {
         $chunkSize = 1024;
-        $handle    = fopen($filename, 'wb+');
+        $handle = fopen($filename, 'wb+');
         for ($i = 0; $i < $sizeKb; $i += $chunkSize) {
             fwrite($handle, static::randomString($chunkSize), $chunkSize);
         }
         fclose($handle);
     }
 
-    protected static function randomString($length)
+    protected static function randomString($length): string
     {
         static $characters;
         static $charLength;
@@ -537,7 +512,10 @@ class IntegrationTest extends \PHPUnit_Extensions_Database_TestCase
         return $string;
     }
 
-    protected function createResource($filename)
+    /**
+     * @return resource
+     */
+    protected function createResource(string $filename)
     {
         $handle = fopen($filename, 'r');
         $this->tempHandles[] = $handle;

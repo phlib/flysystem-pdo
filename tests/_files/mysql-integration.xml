@@ -1,9 +1,0 @@
-<?xml version="1.0"?>
-<mysqldump xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-<database name="FlysystemPdo">
-	<table_data name="flysystem_path">
-	</table_data>
-	<table_data name="flysystem_chunk">
-	</table_data>
-</database>
-</mysqldump>

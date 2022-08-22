@@ -12,7 +12,7 @@
         }
     ],
     "require": {
-        "php": "^5.4|^7.0",
+        "php": "^7.2",
         "ext-json": "*",
         "ext-pdo": "*",
         "ext-zlib": "*",
@@ -20,8 +20,8 @@
         "league/flysystem": "^1.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "^4.5",
-        "phpunit/dbunit": ">=1.2"
+        "symplify/easy-coding-standard": "^11",
+        "phpunit/phpunit": "^7"
     },
     "autoload": {
         "psr-4": {
@@ -32,5 +32,9 @@
         "psr-4": {
             "Phlib\\Flysystem\\Pdo\\Tests\\": "tests/"
         }
+    },
+    "scripts": {
+        "cs-check": "vendor/bin/ecs",
+        "cs-fix": "vendor/bin/ecs --fix"
     }
 }
