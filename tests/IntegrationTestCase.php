@@ -11,34 +11,36 @@ abstract class IntegrationTestCase extends TestCase
     /**
      * @var \PDO
      */
-    protected static $pdo;
+    private static $testDbAdapter;
 
     /**
      * @var string
      */
-    protected static $driver;
+    private static $driver;
 
-    public static function setUpBeforeClass()
+    final protected static function getTestDbAdapter(): \PDO
     {
-        parent::setUpBeforeClass();
-
-        if (!getenv('INTEGRATION_ENABLED')) {
-            return;
+        if (!isset(self::$testDbAdapter)) {
+            // @todo allow tests to use alternative to MySQL
+            $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
+            static::$driver = 'mysql';
+            static::$testDbAdapter = new \PDO(
+                $dsn,
+                getenv('DB_USERNAME'),
+                getenv('DB_PASSWORD'),
+                [
+                    \PDO::ATTR_TIMEOUT => 2,
+                    \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                    \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+                ]
+            );
         }
+        return self::$testDbAdapter;
+    }
 
-        // @todo allow tests to use alternative to MySQL
-        $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
-        static::$driver = 'mysql';
-        static::$pdo = new \PDO(
-            $dsn,
-            getenv('DB_USERNAME'),
-            getenv('DB_PASSWORD'),
-            [
-                \PDO::ATTR_TIMEOUT => 2,
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
-            ]
-        );
+    final protected static function getDbDriverName(): string
+    {
+        return static::$driver;
     }
 
     protected function setUp(): void
@@ -49,14 +51,14 @@ abstract class IntegrationTestCase extends TestCase
 
         parent::setUp();
 
-        static::$pdo->query('TRUNCATE flysystem_path');
-        static::$pdo->query('TRUNCATE flysystem_chunk');
+        static::getTestDbAdapter()->query('TRUNCATE flysystem_path');
+        static::getTestDbAdapter()->query('TRUNCATE flysystem_chunk');
     }
 
     final protected static function assertRowCount(int $expectedCount, string $tableName, string $message = ''): void
     {
         $sql = 'SELECT COUNT(*) FROM ' . $tableName;
-        $rowCount = (int)self::$pdo->query($sql)->fetchColumn();
+        $rowCount = (int)self::getTestDbAdapter()->query($sql)->fetchColumn();
 
         static::assertSame($expectedCount, $rowCount, $message);
     }

@@ -64,8 +64,6 @@ class IntegrationTest extends IntegrationTestCase
 
     public static function tearDownAfterClass(): void
     {
-        static::$driver = null;
-        static::$pdo = null;
         foreach (static::$tempFiles as $file) {
             if (is_file($file)) {
                 unlink($file);
@@ -76,17 +74,12 @@ class IntegrationTest extends IntegrationTestCase
 
     protected function setUp(): void
     {
-        if (!static::$pdo instanceof \PDO) {
-            static::markTestSkipped();
-            return;
-        }
-
         parent::setUp();
 
-        $this->adapter = new PdoAdapter(static::$pdo);
+        $this->adapter = new PdoAdapter(static::getTestDbAdapter());
 
         $config = [];
-        if (static::$driver === 'mysql') {
+        if (static::getDbDriverName() === 'mysql') {
             $config['disable_mysql_buffering'] = true;
         }
         $this->emptyConfig = new Config($config);
@@ -231,7 +224,7 @@ class IntegrationTest extends IntegrationTestCase
         ]));
 
         $sql = "SELECT is_compressed FROM flysystem_path WHERE path_id = {$meta['path_id']}";
-        $actual = static::$pdo->query($sql)->fetchColumn();
+        $actual = static::getTestDbAdapter()->query($sql)->fetchColumn();
 
         static::assertSame('1', $actual);
     }
@@ -246,8 +239,8 @@ class IntegrationTest extends IntegrationTestCase
         $this->adapter->copy($origPath, $copyPath);
 
         $select = 'SELECT type, mimetype, visibility, size, is_compressed FROM flysystem_path WHERE path = "%s"';
-        $origDataSet = static::$pdo->query(sprintf($select, $origPath))->fetchAll();
-        $copyDataSet = static::$pdo->query(sprintf($select, $copyPath))->fetchAll();
+        $origDataSet = static::getTestDbAdapter()->query(sprintf($select, $origPath))->fetchAll();
+        $copyDataSet = static::getTestDbAdapter()->query(sprintf($select, $copyPath))->fetchAll();
 
         static::assertSame($origDataSet, $copyDataSet);
     }
@@ -265,8 +258,8 @@ class IntegrationTest extends IntegrationTestCase
         $this->adapter->copy($origPath, $copyPath);
 
         $select = 'SELECT chunk_no, content FROM flysystem_chunk JOIN flysystem_path USING (path_id) WHERE path = "%s"';
-        $origDataSet = static::$pdo->query(sprintf($select, $origPath))->fetchAll();
-        $copyDataSet = static::$pdo->query(sprintf($select, $copyPath))->fetchAll();
+        $origDataSet = static::getTestDbAdapter()->query(sprintf($select, $origPath))->fetchAll();
+        $copyDataSet = static::getTestDbAdapter()->query(sprintf($select, $copyPath))->fetchAll();
 
         static::assertSame($origDataSet, $copyDataSet);
     }
@@ -286,12 +279,12 @@ class IntegrationTest extends IntegrationTestCase
     public function testMemoryUsageOnReadingStreamWithBuffering(): void
     {
         $config = $this->emptyConfig;
-        if (static::$driver === 'mysql') {
+        if (static::getDbDriverName() === 'mysql') {
             $config = new Config([
                 'enable_mysql_buffering' => true,
             ]);
         }
-        $adapter = new PdoAdapter(static::$pdo, $config);
+        $adapter = new PdoAdapter(static::getTestDbAdapter(), $config);
 
         $filename = static::$tempFiles['xl'];
         $file = fopen($filename, 'r');
@@ -307,7 +300,7 @@ class IntegrationTest extends IntegrationTestCase
 
     public function testMemoryUsageOnReadingStreamWithoutBuffering(): void
     {
-        if (static::$driver !== 'mysql') {
+        if (static::getDbDriverName() !== 'mysql') {
             static::markTestSkipped('Cannot test buffering on non mysql driver.');
             return;
         }
@@ -315,7 +308,7 @@ class IntegrationTest extends IntegrationTestCase
         $config = new Config([
             'enable_mysql_buffering' => false,
         ]);
-        $adapter = new PdoAdapter(static::$pdo, $config);
+        $adapter = new PdoAdapter(static::getTestDbAdapter(), $config);
 
         $filename = static::$tempFiles['xl'];
         $file = fopen($filename, 'r');
@@ -479,7 +472,7 @@ class IntegrationTest extends IntegrationTestCase
         $this->adapter->setVisibility($path, AdapterInterface::VISIBILITY_PRIVATE);
 
         $select = "SELECT visibility FROM flysystem_path WHERE path_id = {$meta['path_id']}";
-        $actual = static::$pdo->query($select)->fetchColumn();
+        $actual = static::getTestDbAdapter()->query($select)->fetchColumn();
 
         static::assertSame(AdapterInterface::VISIBILITY_PRIVATE, $actual);
     }
