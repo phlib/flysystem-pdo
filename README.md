@@ -6,7 +6,8 @@
 [![Total Downloads](https://img.shields.io/packagist/dt/phlib/flysystem-pdo.svg?logo=packagist)](https://packagist.org/packages/phlib/flysystem-pdo)
 ![Licence](https://img.shields.io/github/license/phlib/flysystem-pdo.svg)
 
-This is a [PDO](http://php.net/manual/en/class.pdo.php) Adapter for the Leagues [Flysystem](http://php.net/manual/en/class.pdo.php).
+This is a [PDO](https://www.php.net/manual/en/class.pdo.php) Adapter for the
+League's [Flysystem](https://flysystem.thephpleague.com/).
 
 * Uses multiple tables.
 * Stores files in chunks.
