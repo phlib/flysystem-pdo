@@ -62,6 +62,4 @@ jobs:
           INTEGRATION_ENABLED: 1
 
       - name: "Upload coverage to Codecov"
-        uses: "codecov/codecov-action@v2"
-        with:
-          fail_ci_if_error: true
+        uses: "codecov/codecov-action@v3"
