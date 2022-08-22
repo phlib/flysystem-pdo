@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
-<phpunit bootstrap="vendor/autoload.php" colors="true">
+<phpunit
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.3/phpunit.xsd"
+    bootstrap="vendor/autoload.php"
+    beStrictAboutOutputDuringTests="true"
+    colors="true"
+>
     <php>
         <env name="INTEGRATION_ENABLED" value="0" />
         <env name="DB_HOST" value="127.0.0.1" />
@@ -10,13 +15,13 @@
         <env name="DB_DATABASE" value="test" />
     </php>
     <testsuites>
-        <testsuite name="FlysystemPdo Test Suite">
+        <testsuite name="Phlib Test Suite">
             <directory>tests</directory>
         </testsuite>
     </testsuites>
-    <filter>
-        <whitelist>
-            <directory suffix=".php">src/</directory>
-        </whitelist>
-    </filter>
+    <coverage>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </coverage>
 </phpunit>
