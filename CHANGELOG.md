@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - **BC break**: `copy()` and `rename()` no longer return metadata array,
   instead return boolean to match the interface.
 ### Removed
-- **BC break**: Removed support for PHP versions <= v7.1 as they are no longer
+- **BC break**: Remove support for PHP versions <= v7.3 as they are no longer
   [actively supported](https://php.net/supported-versions.php) by the PHP project
 
 ## [1.1.0] - 2018-03-24
