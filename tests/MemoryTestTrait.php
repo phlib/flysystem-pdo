@@ -30,9 +30,7 @@ trait MemoryTestTrait
 
     protected function memoryTest(\Closure $unit, int $variation = 2, string $memoryLimit = '250M'): void
     {
-        if ($memoryLimit !== false) {
-            $this->setupMemoryLimit($memoryLimit);
-        }
+        $this->setupMemoryLimit($memoryLimit);
 
         // convert variation from megabytes to bytes
         $variation = $variation * 1048576;
