@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Added
+- Add support for PHP v8
 - Type declarations have been added to all properties, method parameters and
   return types where possible.
 ### Changed
