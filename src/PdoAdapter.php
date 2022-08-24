@@ -10,6 +10,10 @@ use League\Flysystem\Util;
 
 class PdoAdapter implements AdapterInterface
 {
+    private const TYPE_DIRECTORY = 'dir';
+
+    private const TYPE_FILE = 'file';
+
     protected \PDO $db;
 
     protected Config $config;
@@ -82,7 +86,7 @@ class PdoAdapter implements AdapterInterface
         $enableCompression = (bool)$config->get('enable_compression', $this->config->get('enable_compression'));
         $data = [
             'path' => $path,
-            'type' => 'file',
+            'type' => self::TYPE_FILE,
             'mimetype' => Util::guessMimeType($path, $contents),
             'visibility' => $config->get('visibility', AdapterInterface::VISIBILITY_PUBLIC),
             'size' => filesize($filename),
@@ -98,7 +102,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $data['path_id'] = $this->insertPath(
-            'file',
+            self::TYPE_FILE,
             $data['path'],
             $data['visibility'],
             $data['mimetype'],
@@ -152,7 +156,7 @@ class PdoAdapter implements AdapterInterface
     protected function doUpdate(string $path, string $filename, string $contents, $resource, Config $config)
     {
         $data = $this->findPathData($path);
-        if (!is_array($data) || $data['type'] !== 'file') {
+        if (!is_array($data) || $data['type'] !== self::TYPE_FILE) {
             return false;
         }
 
@@ -214,7 +218,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         // rename all children when it's directory
-        if ($data['type'] === 'dir') {
+        if ($data['type'] === self::TYPE_DIRECTORY) {
             $pathLength = strlen($path);
             $listing = $this->listContents($path, true);
             foreach ($listing as $item) {
@@ -256,7 +260,7 @@ class PdoAdapter implements AdapterInterface
             $data['meta'] ?? null
         );
 
-        if ($newData['type'] === 'file') {
+        if ($newData['type'] === self::TYPE_FILE) {
             $resource = $this->getChunkResource($data['path_id'], (bool)$data['is_compressed']);
             $this->insertChunks($newData['path_id'], $resource, (bool)$data['is_compressed']);
             $this->cleanupTemp($resource, '');
@@ -271,7 +275,7 @@ class PdoAdapter implements AdapterInterface
     public function delete($path): bool
     {
         $data = $this->findPathData($path);
-        if (!is_array($data) || $data['type'] !== 'file') {
+        if (!is_array($data) || $data['type'] !== self::TYPE_FILE) {
             return false;
         }
 
@@ -289,7 +293,7 @@ class PdoAdapter implements AdapterInterface
     public function deleteDir($dirname): bool
     {
         $data = $this->findPathData($dirname);
-        if (!is_array($data) || $data['type'] !== 'dir') {
+        if (!is_array($data) || $data['type'] !== self::TYPE_DIRECTORY) {
             return false;
         }
 
@@ -297,7 +301,7 @@ class PdoAdapter implements AdapterInterface
 
         foreach ($listing as $item) {
             $this->deletePath($item['path_id']);
-            if ($item['type'] === 'file') {
+            if ($item['type'] === self::TYPE_FILE) {
                 $this->deleteChunks($item['path_id']);
             }
         }
@@ -315,13 +319,22 @@ class PdoAdapter implements AdapterInterface
         if ($config->has('meta')) {
             $additional = $config->get('meta');
         }
-        $pathId = $this->insertPath('dir', $dirname, null, null, null, true, null, $additional);
+        $pathId = $this->insertPath(
+            self::TYPE_DIRECTORY,
+            $dirname,
+            null,
+            null,
+            null,
+            true,
+            null,
+            $additional,
+        );
         if ($pathId === false) {
             return false;
         }
 
         $data = [
-            'type' => 'dir',
+            'type' => self::TYPE_DIRECTORY,
             'path' => $dirname,
             'path_id' => $pathId,
             'update_ts' => date('Y-m-d H:i:s'),
@@ -562,7 +575,7 @@ class PdoAdapter implements AdapterInterface
             'path' => $data['path'],
             'timestamp' => strtotime($data['update_ts']),
         ];
-        if ($data['type'] === 'file') {
+        if ($data['type'] === self::TYPE_FILE) {
             $meta['mimetype'] = $data['mimetype'];
             $meta['size'] = (int)$data['size'];
             $meta['visibility'] = $data['visibility'];
@@ -597,7 +610,7 @@ class PdoAdapter implements AdapterInterface
     protected function getFileMetadataValue(string $path, string $property)
     {
         $meta = $this->getMetadata($path);
-        if ($meta['type'] !== 'file' || !isset($meta[$property])) {
+        if ($meta['type'] !== self::TYPE_FILE || !isset($meta[$property])) {
             return false;
         }
         return [
@@ -606,7 +619,7 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param string $type 'file' or 'dir'
+     * @param string $type self::TYPE_FILE or self::TYPE_DIR
      * @param string|null $visibility 'public' or 'private'
      * @return int|false
      */
@@ -621,7 +634,7 @@ class PdoAdapter implements AdapterInterface
         array $additional = null
     ) {
         $data = [
-            'type' => $type === 'dir' ? 'dir' : 'file',
+            'type' => $type === self::TYPE_DIRECTORY ? self::TYPE_DIRECTORY : self::TYPE_FILE,
             'path' => $path,
             'visibility' => $visibility,
             'mimetype' => $mimeType,
