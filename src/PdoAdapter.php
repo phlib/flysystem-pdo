@@ -683,6 +683,9 @@ class PdoAdapter implements AdapterInterface
         ]);
     }
 
+    /**
+     * @param resource $resource
+     */
     protected function insertChunks(int $pathId, $resource, bool $enableCompression): void
     {
         rewind($resource);
