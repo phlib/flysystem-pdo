@@ -4,21 +4,29 @@ declare(strict_types=1);
 
 namespace Phlib\Flysystem\Pdo;
 
-use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
-use League\Flysystem\Util;
+use League\Flysystem\DirectoryAttributes;
+use League\Flysystem\FilesystemAdapter;
+use League\Flysystem\StorageAttributes;
+use League\Flysystem\UnableToCopyFile;
+use League\Flysystem\UnableToCreateDirectory;
+use League\Flysystem\UnableToMoveFile;
+use League\Flysystem\UnableToReadFile;
+use League\Flysystem\UnableToRetrieveMetadata;
+use League\Flysystem\UnableToWriteFile;
+use League\Flysystem\Visibility;
+use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use League\MimeTypeDetection\MimeTypeDetector;
 
-class PdoAdapter implements AdapterInterface
+class PdoAdapter implements FilesystemAdapter
 {
-    private const TYPE_DIRECTORY = 'dir';
-
-    private const TYPE_FILE = 'file';
-
     protected Config $config;
 
     protected string $pathTable;
 
     protected string $chunkTable;
+
+    private MimeTypeDetector $mimeTypeDetector;
 
     public function __construct(
         protected \PDO $db,
@@ -31,14 +39,13 @@ class PdoAdapter implements AdapterInterface
         }
 
         $defaultPrefix = 'flysystem';
-        $config->setFallback(new Config([
+        $this->config = $config->withDefaults([
             'table_prefix' => $defaultPrefix,
             'enable_compression' => true,
             'chunk_size' => 1048576, // 1MB chunks, in bytes
             'temp_dir' => sys_get_temp_dir(),
             'disable_mysql_buffering' => true,
-        ]));
-        $this->config = $config;
+        ]);
 
         $tablePrefix = trim($this->config->get('table_prefix'));
         if ($tablePrefix === '') {
@@ -47,227 +54,179 @@ class PdoAdapter implements AdapterInterface
         $this->pathTable = "{$tablePrefix}_path";
         $this->chunkTable = "{$tablePrefix}_chunk";
 
-        if ($config->get('disable_mysql_buffering')) {
+        if ($this->config->get('disable_mysql_buffering')) {
             $this->db->setAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
         }
+
+        $this->mimeTypeDetector = new FinfoMimeTypeDetector();
+    }
+
+    public function write(string $path, string $contents, Config $config): void
+    {
+        $this->doWrite($path, $contents, $config);
     }
 
     /**
-     * @param string $path
-     * @param string $contents
-     * @return array|false false on failure file meta data on success
+     * @param resource $contents
      */
-    public function write($path, $contents, Config $config)
+    public function writeStream(string $path, $contents, Config $config): void
     {
+        $this->doWrite($path, $contents, $config);
+    }
+
+    /**
+     * @param string|resource $contents
+     */
+    protected function doWrite(
+        string $path,
+        $contents,
+        Config $config,
+    ): void {
         if ($this->isExpiryInPast($config)) {
-            return false;
+            // The file would be immediately unavailable, so don't store it, and remove any existing file
+            $this->delete($path);
+            return;
         }
 
-        $filename = $this->getTempFilename();
-        $resource = $this->getTempResource($filename, $contents);
-
-        return $this->doWrite($path, $filename, $contents, $resource, $config);
-    }
-
-    /**
-     * @param string   $path
-     * @param resource $resource
-     * @return array|false false on failure file meta data on success
-     */
-    public function writeStream($path, $resource, Config $config)
-    {
-        if ($this->isExpiryInPast($config)) {
-            return false;
+        $existing = $this->findRawPathData($path);
+        if ($existing && $existing['is_expired']) {
+            // The existing file has expired;
+            // delete it and continue as a new file, to avoid a conflict with the unique index on the path
+            $this->deletePath((int) $existing['path_id']);
+            $this->deleteChunks((int) $existing['path_id']);
+            $existing = false;
+        }
+        if ($existing && $existing['type'] !== StorageAttributes::TYPE_FILE) {
+            throw UnableToWriteFile::atLocation($path, 'Path already exists as a directory');
         }
 
-        $filename = $this->getTempFilename();
-        $resource = $this->getTempResource($filename, $resource);
+        $mimeType = $this->mimeTypeDetector->detectMimeType($path, $contents) ?? 'text/plain';
+        $tempFilename = $this->getTempFilename();
+        $tempResource = $this->getTempResource($tempFilename, $contents);
+        $fileSize = filesize($tempFilename);
 
-        return $this->doWrite($path, $filename, '', $resource, $config);
-    }
+        if ($existing !== false) {
+            try {
+                $this->doUpdate(
+                    $existing['path_id'],
+                    $tempResource,
+                    $config,
+                    (bool) $existing['is_compressed'],
+                    $mimeType,
+                    $fileSize,
+                );
+            } finally {
+                $this->cleanupTemp($tempResource, $tempFilename);
+            }
+            return;
+        }
 
-    /**
-     * @param resource $resource
-     * @return array|false
-     */
-    protected function doWrite(string $path, string $filename, string $contents, $resource, Config $config)
-    {
         $enableCompression = (bool) $config->get('enable_compression', $this->config->get('enable_compression'));
-        $data = [
-            'path' => $path,
-            'type' => self::TYPE_FILE,
-            'mimetype' => Util::guessMimeType($path, $contents),
-            'visibility' => $config->get('visibility', AdapterInterface::VISIBILITY_PUBLIC),
-            'size' => filesize($filename),
-            'is_compressed' => (int) $enableCompression,
-        ];
         $expiry = null;
-        if ($config->has('expiry')) {
+        if ($config->get('expiry')) {
             $expiry = $config->get('expiry');
-            $data['expiry'] = $expiry->format('Y-m-d H:i:s');
         }
         $meta = null;
-        if ($config->has('meta')) {
+        if ($config->get('meta')) {
             $meta = $config->get('meta');
-            $data['meta'] = json_encode($meta);
         }
 
         try {
-            $this->deleteExpiredPath($path);
-            $data['path_id'] = $this->insertPath(
-                self::TYPE_FILE,
-                $data['path'],
-                $data['visibility'],
-                $data['mimetype'],
-                $data['size'],
+            $pathId = $this->insertPath(
+                StorageAttributes::TYPE_FILE,
+                $path,
+                $config->get('visibility', Visibility::PUBLIC),
+                $mimeType,
+                $fileSize,
                 $enableCompression,
                 $expiry,
                 $meta,
             );
-            $this->insertChunks($data['path_id'], $resource, $enableCompression);
+            $this->insertChunks($pathId, $tempResource, $enableCompression);
         } finally {
-            $this->cleanupTemp($resource, $filename);
+            $this->cleanupTemp($tempResource, $tempFilename);
         }
-
-        $data['update_ts'] = date('Y-m-d H:i:s');
-        return $this->normalizeMetadata($data);
     }
 
     /**
-     * @param string $path
-     * @param string $contents
-     * @return array|false false on failure file meta data on success
+     * @param resource $contents
      */
-    public function update($path, $contents, Config $config)
-    {
-        $filename = $this->getTempFilename();
-        $resource = $this->getTempResource($filename, $contents);
+    protected function doUpdate(
+        int $pathId,
+        $contents,
+        Config $config,
+        bool $isCompressed,
+        string $mimeType,
+        int $fileSize,
+    ): void {
+        $data = [
+            'mimetype' => $mimeType,
+            'size' => $fileSize,
+        ];
 
-        return $this->doUpdate($path, $filename, $contents, $resource, $config);
-    }
-
-    /**
-     * @param string   $path
-     * @param resource $resource
-     * @return array|false false on failure file meta data on success
-     */
-    public function updateStream($path, $resource, Config $config)
-    {
-        $filename = $this->getTempFilename();
-        $resource = $this->getTempResource($filename, $resource);
-
-        return $this->doUpdate($path, $filename, '', $resource, $config);
-    }
-
-    /**
-     * @param resource $resource
-     * @return array|false
-     */
-    protected function doUpdate(string $path, string $filename, string $contents, $resource, Config $config)
-    {
-        $data = $this->findPathData($path);
-        if (!is_array($data) || $data['type'] !== self::TYPE_FILE) {
-            $this->cleanupTemp($resource, $filename);
-            return false;
+        if ($config->get('expiry')) {
+            $data['expiry'] = $config->get('expiry')->format('Y-m-d H:i:s');
         }
-
-        $searchKeys = ['size', 'mimetype'];
-        $data['size'] = filesize($filename);
-        $data['mimetype'] = Util::guessMimeType($data['path'], $contents);
-        if ($config->has('expiry')) {
-            $expiry = $config->get('expiry');
-            $data['expiry'] = $expiry->format('Y-m-d H:i:s');
-            $searchKeys[] = 'expiry';
-        }
-        if ($config->has('meta')) {
+        if ($config->get('meta')) {
             $data['meta'] = json_encode($config->get('meta'));
-            $searchKeys[] = 'meta';
         }
 
-        $values = array_intersect_key($data, array_flip($searchKeys));
         $setValues = implode(', ', array_map(function ($field) {
             return "{$field} = :{$field}";
-        }, array_keys($values)));
+        }, array_keys($data)));
 
         $update = "UPDATE {$this->pathTable} SET {$setValues} WHERE path_id = :path_id";
         $stmt = $this->db->prepare($update);
-        $params = array_merge($values, [
-            'path_id' => $data['path_id'],
+        $params = array_merge($data, [
+            'path_id' => $pathId,
         ]);
-        try {
-            $stmt->execute($params);
-            $this->deleteChunks($data['path_id']);
-            $this->insertChunks($data['path_id'], $resource, (bool) $data['is_compressed']);
-        } finally {
-            $this->cleanupTemp($resource, $filename);
-        }
+        $stmt->execute($params);
 
-        if ($this->hasExpired($data)) {
-            // Updated with an expiry in the past, so the file is immediately unavailable
-            return false;
-        }
-
-        $data['update_ts'] = date('Y-m-d H:i:s');
-        return $this->normalizeMetadata($data);
+        $this->deleteChunks($pathId);
+        $this->insertChunks($pathId, $contents, $isCompressed);
     }
 
-    /**
-     * @param string $path
-     * @param string $newpath
-     */
-    public function rename($path, $newpath): bool
+    public function move(string $source, string $destination, Config $config): void
     {
-        $update = "UPDATE {$this->pathTable} SET path = :newpath WHERE path_id = :path_id";
+        if ($source === $destination) {
+            // Nothing would be updated, so the result cannot confirm the file exists
+            if (!$this->fileExists($source)) {
+                throw UnableToMoveFile::fromLocationTo($source, $destination, UnableToReadFile::fromLocation($source));
+            }
+            return;
+        }
+
+        $this->deleteExpiredPath($destination);
+
+        $update = "UPDATE {$this->pathTable} SET path = :destination"
+            . " WHERE path = :source AND type = :type AND {$this->notExpiredCondition()}";
         $stmt = $this->db->prepare($update);
+        $stmt->execute([
+            'destination' => $destination,
+            'source' => $source,
+            'type' => StorageAttributes::TYPE_FILE,
+            ...$this->getExpiredConditionBindParams(),
+        ]);
 
-        // rename the primary node first
-        $data = $this->findPathData($path);
-        if (is_array($data)) {
-            $this->deleteExpiredPath($newpath);
-            $stmt->execute([
-                'newpath' => $newpath,
-                'path_id' => $data['path_id'],
-            ]);
+        if ($stmt->rowCount() === 0) {
+            // The file does not exist, or has expired
+            throw UnableToMoveFile::fromLocationTo($source, $destination, UnableToReadFile::fromLocation($source));
         }
-
-        // rename all children when it's directory; it may be a directory if no record was found for exact match
-        if ($data === false || $data['type'] === self::TYPE_DIRECTORY) {
-            $pathLength = strlen($path);
-            $listing = $this->listContents($path, true);
-            if ($data === false && empty($listing)) {
-                // No exact match, no children => it doesn't exist
-                return false;
-            }
-            foreach ($listing as $item) {
-                $newItemPath = $newpath . substr($item['path'], $pathLength);
-                $this->deleteExpiredPath($newItemPath);
-                $stmt->execute([
-                    'newpath' => $newItemPath,
-                    'path_id' => $item['path_id'],
-                ]);
-            }
-        }
-
-        return true;
     }
 
-    /**
-     * @param string $path
-     * @param string $newpath
-     */
-    public function copy($path, $newpath): bool
+    public function copy(string $source, string $destination, Config $config): void
     {
-        $data = $this->findPathData($path);
+        $data = $this->findPathData($source);
         if (!is_array($data)) {
-            return false;
+            throw UnableToCopyFile::fromLocationTo($source, $destination);
         }
 
         $newData = $data;
-        $newData['path'] = $newpath;
+        $newData['path'] = $destination;
         unset($newData['path_id']);
         unset($newData['update_ts']);
 
-        $this->deleteExpiredPath($newpath);
+        $this->deleteExpiredPath($destination);
         $newData['path_id'] = $this->insertPath(
             $data['type'],
             $newData['path'],
@@ -279,101 +238,77 @@ class PdoAdapter implements AdapterInterface
             $data['meta'] ?? null,
         );
 
-        if ($newData['type'] === self::TYPE_FILE) {
+        if ($newData['type'] === StorageAttributes::TYPE_FILE) {
             $resource = $this->getChunkResource($data['path_id'], (bool) $data['is_compressed']);
             $this->insertChunks($newData['path_id'], $resource, (bool) $data['is_compressed']);
             $this->cleanupTemp($resource, '');
         }
-
-        return true;
     }
 
-    /**
-     * @param string $path
-     */
-    public function delete($path): bool
+    public function delete(string $path): void
     {
         $data = $this->findPathData($path);
-        if (!is_array($data) || $data['type'] !== self::TYPE_FILE) {
-            return false;
+        if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_FILE) {
+            return;
         }
 
         $this->deletePath($data['path_id']);
         $this->deleteChunks($data['path_id']);
-
-        return true;
     }
 
-    /**
-     * @param string $dirname
-     */
-    public function deleteDir($dirname): bool
+    public function deleteDirectory(string $path): void
     {
-        $data = $this->findPathData($dirname);
-        if (!is_array($data) || $data['type'] !== self::TYPE_DIRECTORY) {
-            return false;
+        $data = $this->findPathData($path);
+        if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_DIRECTORY) {
+            return;
         }
 
-        $listing = $this->listContents($dirname, true);
+        $select = "SELECT * FROM {$this->pathTable}";
 
-        foreach ($listing as $item) {
-            $this->deletePath($item['path_id']);
-            if ($item['type'] === self::TYPE_FILE) {
-                $this->deleteChunks($item['path_id']);
+        $path = rtrim($path, '/');
+        $select .= " WHERE path = :path OR {$this->descendantCondition()}";
+        $params = [
+            'path' => $path,
+            ...$this->getDescendantConditionBindParams($path),
+        ];
+
+        $stmt = $this->db->prepare($select);
+        $stmt->execute($params);
+
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        foreach ($rows as $row) {
+            $this->deletePath((int) $row['path_id']);
+            if ($row['type'] === StorageAttributes::TYPE_FILE) {
+                $this->deleteChunks((int) $row['path_id']);
             }
         }
-
-        $this->deletePath($data['path_id']);
-
-        return true;
     }
 
-    /**
-     * @param string $dirname directory name
-     * @return array|false
-     */
-    public function createDir($dirname, Config $config)
+    public function createDirectory(string $path, Config $config): void
     {
-        $existing = $this->findPathData($dirname);
-        if (is_array($existing)) {
-            // Creating a directory which already exists is successful, but it cannot replace a file
-            return $existing['type'] === self::TYPE_DIRECTORY ? $this->normalizeMetadata($existing) : false;
+        $existing = $this->findPathData($path);
+        if ($existing) {
+            if ($existing['type'] !== StorageAttributes::TYPE_DIRECTORY) {
+                throw UnableToCreateDirectory::atLocation($path, 'Path already exists as a file');
+            }
+            // Creating a directory is idempotent
+            return;
         }
 
-        $this->deleteExpiredPath($dirname);
+        $this->deleteExpiredPath($path);
         $additional = null;
-        if ($config->has('meta')) {
+        if ($config->get('meta')) {
             $additional = $config->get('meta');
         }
-        $pathId = $this->insertPath(
-            self::TYPE_DIRECTORY,
-            $dirname,
-            null,
-            null,
-            null,
-            true,
-            null,
-            $additional,
+        $this->insertPath(
+            StorageAttributes::TYPE_DIRECTORY,
+            $path,
+            additional: $additional,
         );
-
-        $data = [
-            'type' => self::TYPE_DIRECTORY,
-            'path' => $dirname,
-            'path_id' => $pathId,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ];
-        if ($additional !== null) {
-            $data['meta'] = json_encode($additional);
-        }
-        return $this->normalizeMetadata($data);
     }
 
-    /**
-     * @param string $path
-     * @param string $visibility
-     * @return array|false file meta data
-     */
-    public function setVisibility($path, $visibility)
+    public function setVisibility(string $path, string $visibility): void
     {
         $update = "UPDATE {$this->pathTable} SET visibility = :visibility WHERE path = :path";
         $data = [
@@ -382,67 +317,48 @@ class PdoAdapter implements AdapterInterface
         ];
         $stmt = $this->db->prepare($update);
         $stmt->execute($data);
-
-        return $this->getMetadata($path);
     }
 
-    /**
-     * @param string $path
-     */
-    public function has($path): bool
+    public function fileExists($path): bool
     {
-        $select = "SELECT 1 FROM {$this->pathTable} WHERE path = :path AND {$this->notExpiredCondition()} LIMIT 1";
+        $select = "SELECT 1 FROM {$this->pathTable} WHERE path = :path AND type = :type"
+            . " AND {$this->notExpiredCondition()} LIMIT 1";
         $stmt = $this->db->prepare($select);
         $stmt->execute([
             'path' => $path,
+            'type' => StorageAttributes::TYPE_FILE,
             ...$this->getExpiredConditionBindParams(),
         ]);
 
         return (bool) $stmt->fetchColumn();
     }
 
-    /**
-     * @param string $path
-     * @return array|false
-     */
-    public function read($path)
+    public function read(string $path): string
     {
-        $data = $this->findPathData($path);
-        if (!is_array($data)) {
-            return false;
-        }
+        $resource = $this->readStream($path);
+        $content = stream_get_contents($resource);
+        fclose($resource);
 
-        $metadata = $this->normalizeMetadata($data);
-
-        if ($data['type'] === self::TYPE_FILE) {
-            $resource = $this->getChunkResource($data['path_id'], (bool) $data['is_compressed']);
-            $metadata['contents'] = stream_get_contents($resource);
-            fclose($resource);
-        }
-
-        return $metadata;
-    }
-
-    /**
-     * @param string $path
-     * @return array|false
-     */
-    public function readStream($path)
-    {
-        $data = $this->findPathData($path);
-        if (!is_array($data)) {
-            return false;
-        }
-
-        $metadata = $this->normalizeMetadata($data);
-        $metadata['stream'] = $this->getChunkResource($metadata['path_id'], (bool) $data['is_compressed']);
-        return $metadata;
+        return $content;
     }
 
     /**
      * @return resource
      */
-    protected function getChunkResource(int $pathId, bool $isCompressed)
+    public function readStream(string $path)
+    {
+        $data = $this->findPathData($path);
+        if (!is_array($data)) {
+            throw UnableToReadFile::fromLocation($path);
+        }
+
+        return $this->getChunkResource((int) $data['path_id'], (bool) $data['is_compressed']);
+    }
+
+    /**
+     * @return resource
+     */
+    private function getChunkResource(int $pathId, bool $isCompressed)
     {
         $resource = fopen('php://temp', 'w+b');
         $compressFilter = null;
@@ -481,80 +397,137 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param string $directory
-     * @param bool   $recursive
+     * Directories don't need to have their own entry, as they are implied by the paths of their descendants.
+     * All descendants are fetched in a single query, and the direct children (or all, for $deep) are derived from
+     * those paths, so that implied directories are listed.
+     *
+     * @return \Generator<StorageAttributes>
      */
-    public function listContents($directory = '', $recursive = false): array
+    public function listContents(string $path = '', bool $deep = false): iterable
     {
+        $path = rtrim($path, '/');
         $params = $this->getExpiredConditionBindParams();
         $select = "SELECT * FROM {$this->pathTable} WHERE {$this->notExpiredCondition()}";
-
-        if (!empty($directory)) {
-            $select .= " AND (path = :path OR {$this->descendantCondition()})";
-            $params['path'] = $directory;
-            $params += $this->getDescendantConditionBindParams($directory);
+        if ($path !== '') {
+            $select .= " AND {$this->descendantCondition()}";
+            $params += $this->getDescendantConditionBindParams($path);
         }
+        $select .= ' ORDER BY path';
 
         $stmt = $this->db->prepare($select);
         $stmt->execute($params);
 
+        // Fetch all rows before yielding: with MySQL buffering disabled, an open result set would prevent the caller
+        // from running other queries (e.g. deleting each file) while iterating
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-        $rows = array_map($this->normalizeMetadata(...), $rows);
-        if ($recursive) {
-            $rows = Util::emulateDirectories($rows);
+
+        // Directories which have their own entry, so are not yielded as implied directories
+        $directoryEntries = [];
+        foreach ($rows as $row) {
+            if ($row['type'] === StorageAttributes::TYPE_DIRECTORY) {
+                $directoryEntries[$row['path']] = true;
+            }
         }
-        return $rows;
+
+        // Ignore a separator at the start of the path, otherwise the root would be listed as a directory
+        $offset = max($path === '' ? 0 : strlen($path) + 1, 1);
+        $listedDirectories = [];
+        foreach ($rows as $row) {
+            // Each separator after the requested path marks an ancestor directory of this row
+            $searchFrom = $offset;
+            while (($separator = strpos($row['path'], '/', $searchFrom)) !== false) {
+                $directory = substr($row['path'], 0, $separator);
+                if (!isset($directoryEntries[$directory]) && !isset($listedDirectories[$directory])) {
+                    $listedDirectories[$directory] = true;
+                    yield new DirectoryAttributes($directory);
+                }
+                if (!$deep) {
+                    // Not a direct child, and only the first level of directories is listed
+                    continue 2;
+                }
+                $searchFrom = $separator + 1;
+            }
+
+            if ($row['type'] === StorageAttributes::TYPE_DIRECTORY) {
+                // Avoid listing duplicate directory entries
+                if (isset($listedDirectories[$row['path']])) {
+                    continue;
+                }
+                $listedDirectories[$row['path']] = true;
+            }
+
+            yield $this->mapRowToAttributes($row);
+        }
     }
 
-    /**
-     * @param string $path
-     * @return array|false
-     */
-    public function getMetadata($path)
+    private function mapRowToAttributes(array $data): StorageAttributes
     {
-        return $this->normalizeMetadata($this->findPathData($path));
+        $timestamp = strtotime($data['update_ts']);
+        if ($this->db->getAttribute(\PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+            $timestamp = strtotime($data['update_ts'] . ' +00:00');
+        }
+
+        $extraMetadata = null;
+        if (isset($data['meta'])) {
+            $extraMetadata = json_decode($data['meta'], true);
+        }
+
+        if ($data['type'] === StorageAttributes::TYPE_DIRECTORY) {
+            return new DirectoryAttributes(
+                $data['path'],
+                $data['visibility'],
+                $timestamp,
+                $extraMetadata ?? [],
+            );
+        }
+
+        $expiry = null;
+        if (isset($data['expiry'])) {
+            $expiry = new \DateTimeImmutable($data['expiry']);
+        }
+
+        return new FileAttributes(
+            $data['path'],
+            $data['size'],
+            $data['visibility'],
+            $timestamp,
+            $data['mimetype'],
+            $expiry,
+            $extraMetadata ?? [],
+        );
     }
 
-    /**
-     * @param string $path
-     * @return array|false
-     */
-    public function getSize($path)
+    public function fileSize(string $path): FileAttributes
     {
         return $this->getFileMetadataValue($path, 'size');
     }
 
-    /**
-     * @param string $path
-     * @return array|false
-     */
-    public function getMimetype($path)
+    public function mimeType(string $path): FileAttributes
     {
         return $this->getFileMetadataValue($path, 'mimetype');
     }
 
-    /**
-     * @param string $path
-     * @return array|false
-     */
-    public function getTimestamp($path)
+    public function lastModified(string $path): FileAttributes
     {
         return $this->getFileMetadataValue($path, 'timestamp');
     }
 
-    /**
-     * @param string $path
-     * @return array|false
-     */
-    public function getVisibility($path)
+    public function visibility(string $path): FileAttributes
     {
         return $this->getFileMetadataValue($path, 'visibility');
     }
 
-    /**
-     * @return array|false
-     */
-    protected function findPathData(string $path)
+    public function expiry(string $path): FileAttributes
+    {
+        return $this->getFileMetadataValue($path, 'expiry');
+    }
+
+    public function extra(string $path): FileAttributes
+    {
+        return $this->getFileMetadataValue($path, 'meta');
+    }
+
+    protected function findPathData(string $path): array|false
     {
         $select = "SELECT * FROM {$this->pathTable} WHERE path = :path AND {$this->notExpiredCondition()} LIMIT 1";
         $stmt = $this->db->prepare($select);
@@ -563,49 +536,31 @@ class PdoAdapter implements AdapterInterface
             ...$this->getExpiredConditionBindParams(),
         ]);
 
-        $data = $stmt->fetch(\PDO::FETCH_ASSOC);
-        if ($data === false) {
-            return false;
-        }
-
-        $data['path_id'] = (int) $data['path_id'];
-
-        return $data;
+        return $stmt->fetch(\PDO::FETCH_ASSOC);
     }
 
     /**
-     * @param array|bool $data
-     * @return array|bool
+     * Find the path including an expired file, which remains in the DB until it is purged by deleteExpired().
+     * The `is_expired` value is set using the same condition as notExpiredCondition().
      */
-    protected function normalizeMetadata($data)
+    private function findRawPathData(string $path): array|false
     {
-        if (!is_array($data) || empty($data)) {
-            return false;
+        $select = "SELECT *, NOT {$this->notExpiredCondition()} AS is_expired"
+            . " FROM {$this->pathTable} WHERE path = :path LIMIT 1";
+        $stmt = $this->db->prepare($select);
+        $stmt->execute([
+            'path' => $path,
+            ...$this->getExpiredConditionBindParams(),
+        ]);
+
+        $data = $stmt->fetch(\PDO::FETCH_ASSOC);
+        // Close the cursor, as further queries cannot run while an unbuffered MySQL result is still open
+        $stmt->closeCursor();
+        if ($data !== false) {
+            $data['is_expired'] = (bool) $data['is_expired'];
         }
 
-        $meta = [
-            'path_id' => (int) $data['path_id'],
-            'type' => $data['type'],
-            'path' => $data['path'],
-            'timestamp' => strtotime($data['update_ts']),
-        ];
-        if ($this->db->getAttribute(\PDO::ATTR_DRIVER_NAME) === 'sqlite') {
-            $meta['timestamp'] = strtotime($data['update_ts'] . ' +00:00');
-        }
-        if ($data['type'] === self::TYPE_FILE) {
-            $meta['mimetype'] = $data['mimetype'];
-            $meta['size'] = (int) $data['size'];
-            $meta['visibility'] = $data['visibility'];
-            if (isset($data['expiry'])) {
-                $meta['expiry'] = new \DateTimeImmutable($data['expiry']);
-            }
-        }
-
-        if (isset($data['meta'])) {
-            $meta['meta'] = json_decode($data['meta'], true);
-        }
-
-        return $meta;
+        return $data;
     }
 
     /**
@@ -627,42 +582,22 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * A new file with an expiry in the past would be immediately unavailable, so is not stored
+     * A file with an expiry in the past would be immediately unavailable, so is not stored
      */
     private function isExpiryInPast(Config $config): bool
     {
-        return $config->has('expiry') && $config->get('expiry') <= new \DateTimeImmutable();
+        $expiry = $config->get('expiry');
+        return $expiry !== null && $expiry <= new \DateTimeImmutable();
     }
 
-    /**
-     * Used for metadata which has not been read from the DB, e.g. after an update with an expiry in the past.
-     * Data read from the DB has already been filtered by notExpiredCondition().
-     */
-    protected function hasExpired(array $data): bool
+    private function getFileMetadataValue(string $path, string $property): FileAttributes
     {
-        if (isset($data['expiry'])
-            && !empty($data['expiry'])
-            && strtotime($data['expiry']) !== false
-            && strtotime($data['expiry']) <= time()
-        ) {
-            return true;
+        $data = $this->findPathData($path);
+        if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_FILE) {
+            throw UnableToRetrieveMetadata::create($path, $property);
         }
 
-        return false;
-    }
-
-    /**
-     * @return array|false
-     */
-    protected function getFileMetadataValue(string $path, string $property)
-    {
-        $meta = $this->getMetadata($path);
-        if ($meta['type'] !== self::TYPE_FILE || !isset($meta[$property])) {
-            return false;
-        }
-        return [
-            $property => $meta[$property],
-        ];
+        return $this->mapRowToAttributes($data);
     }
 
     /**
@@ -680,7 +615,7 @@ class PdoAdapter implements AdapterInterface
         ?array $additional = null,
     ): int {
         $data = [
-            'type' => $type === self::TYPE_DIRECTORY ? self::TYPE_DIRECTORY : self::TYPE_FILE,
+            'type' => $type,
             'path' => $path,
             'visibility' => $visibility,
             'mimetype' => $mimeType,
@@ -755,17 +690,8 @@ class PdoAdapter implements AdapterInterface
      */
     private function deleteExpiredPath(string $path): void
     {
-        $select = "SELECT path_id FROM {$this->pathTable} WHERE path = :path AND expiry <= :now";
-        $stmt = $this->db->prepare($select);
-        $stmt->execute([
-            'path' => $path,
-            ...$this->getExpiredConditionBindParams(),
-        ]);
-        $data = $stmt->fetch(\PDO::FETCH_ASSOC);
-        // Close the cursor, as further queries cannot run while an unbuffered MySQL result is still open
-        $stmt->closeCursor();
-
-        if (is_array($data)) {
+        $data = $this->findRawPathData($path);
+        if ($data && $data['is_expired']) {
             $this->deletePath((int) $data['path_id']);
             $this->deleteChunks((int) $data['path_id']);
         }
@@ -804,6 +730,7 @@ class PdoAdapter implements AdapterInterface
             if ($content === '' || bin2hex($content) === '0300') {
                 continue;
             }
+
             $stmt->execute([
                 'path_id' => $pathId,
                 'chunk_no' => $chunk++,

@@ -154,7 +154,7 @@ class MemoryTest extends IntegrationTestCase
 
         $variation = self::MEMORY_VARIATION;
         $this->memoryTest(function () use ($adapter, $path, $file): void {
-            $adapter->updateStream($path, $file, new Config());
+            $adapter->writeStream($path, $file, new Config());
         }, $variation);
     }
 
@@ -175,10 +175,11 @@ class MemoryTest extends IntegrationTestCase
         $file = fopen(static::$tempFiles['s'], 'r');
         $adapter->writeStream($path, $file, new Config());
         rewind($file);
-        $adapter->updateStream($path, $file, new Config());
+        // Writing to an existing path updates the file
+        $adapter->writeStream($path, $file, new Config());
         fclose($file);
         $read = $adapter->readStream($path);
-        fclose($read['stream']);
+        fclose($read);
         $adapter->delete($path);
     }
 

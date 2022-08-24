@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Changed
+- **BC break**: Upgrade to Flysystem v2. See
+  [migration guide](https://flysystem.thephpleague.com/docs/upgrade-from-1.x/).
 - **BC break**: The PDO connection must use the exception error mode,
   `\PDO::ERRMODE_EXCEPTION`, which is the default since PHP v8.0. The
   constructor throws `\InvalidArgumentException` for any other error mode.

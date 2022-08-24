@@ -18,8 +18,8 @@ into memory, preferring to store files during operation on the local file system
 
 ## Usage
 ```php
-use Phlib\Flysystem\Pdo\PdoAdapter;
 use League\Flysystem\Filesystem;
+use Phlib\Flysystem\Pdo\PdoAdapter;
 
 $pdo        = new \PDO('mysql:host=hostname;dbname=database_name', 'username', 'password');
 $adapter    = new PdoAdapter($pdo);
@@ -33,11 +33,12 @@ Database errors are thrown as `\PDOException`.
 
 ```php
 use League\Flysystem\Config;
+use League\Flysystem\Visibility;
 
 $config = new Config([
     'enable_compression' => false,
-    'visibility'         => AdapterInterface::VISIBILITY_PUBLIC
-]); 
+    'visibility'         => Visibility::PUBLIC,
+]);
 $adapter->writeStream('/path/to/file.zip', $handle, $config);
 ```
 
@@ -61,7 +62,7 @@ $config = new Config([
     'enable_compression'      => true,
     'chunk_size'              => 1048576,
     'temp_dir'                => '/var/tmp',
-    'disable_mysql_buffering' => true
+    'disable_mysql_buffering' => true,
 ]);
 $adapter = new PdoAdapter($pdo, $config);
 ```
@@ -74,13 +75,13 @@ The sample schemas include the columns, but they are optional and may be omitted
 |Name|Type|Description|
 |----|----|-----------|
 |expiry|`\DateTimeImmutable`|Specify an expiry time for the file|
-|meta|mixed|Any additional information. Uses JSON encoding to store the information|
+|meta|array|Any additional information. Uses JSON encoding to store the information|
 
 ### Expiry
-By specifying 'expiry' as a configuration parameter when writing or updating a file the `PdoAdatper`
-will store the value in a column called 'expiry'. When the information about the file is selected out, if the expiry
-exists and can be parsed by `strtotime`, then the expiry time will be evaluated. False is returned if the file doesn't
-exist or has expired.
+By specifying `expiry` as a configuration parameter when writing a file, the `PdoAdapter`
+will store the value in a column called `expiry`. Once the expiry time has passed, the file is treated as though it
+does not exist: `fileExists()` returns `false`, reading the file or its metadata throws the relevant Flysystem
+exception, and writing to the same path creates a new file.
 
 #### Example
 
@@ -91,15 +92,12 @@ $config = new Config([
 $adapter->write($path, $content, $config);
 ```
 
-The expiry is now part of the file description.
+The expiry is available from the adapter, or from the attributes returned by `listContents()`:
 
 ```php
-$data = $adapter->getMetadata($path);
-[
-    'path' => '...',
-    '...',
-    'expiry' => ''
-]
+/** @var \Phlib\Flysystem\Pdo\FileAttributes $attributes */
+$attributes = $adapter->expiry($path);
+$attributes->expiry(); // \DateTimeImmutable|null
 ```
 
 Expired files remain in the database until they are removed. Use `deleteExpired()` to purge them, for example from a
@@ -110,33 +108,31 @@ $deleted = $adapter->deleteExpired();
 ```
 
 ### Additional Metadata
-It's possible to store additional meta data about a file or directory. This could include owner, permissions or groups
-for example. The information is stored as a JSON encoded string in whatever form you provide. One the item is 
-retrieved from the Filesystem the additional meta information is provided in the same format it was originally 
-provided.
+It's possible to store additional metadata about a file or directory. This could include owner, permissions or groups
+for example. The information is stored as a JSON encoded string. Once the item is retrieved from the Filesystem the
+additional meta information is provided as an array via Flysystem's extra metadata.
 
 #### Example
 ```php
-$config = new Config(['meta' => ['owner' => 'John Smith', 'permissions' => 600]]);
+$config = new Config([
+    'meta' => ['owner' => 'John Smith', 'permissions' => 600],
+]);
 $adapter->write($path, $content, $config);
 ```
 
-Those details are now part of the file description.
+Those details are now part of the file attributes.
 
 ```php
-$data = $adapter->getMetadata($path);
+$attributes = $adapter->extra($path);
+$attributes->extraMetadata();
 [
-    'path' => '...',
-    '...',
-    'meta' => [
-        'owner' => 'John Smith',
-        'permissions' => 600
-    ]
+    'owner' => 'John Smith',
+    'permissions' => 600,
 ]
 ```
 
 ## Schema
-Schemas can be found in the schema directory. Specific types can be changed based on requirements. All field names 
+Schemas can be found in the schema directory. Specific types can be changed based on requirements. All field names
 should remain the same. Notes about the DB specific definitions are below.
 
 ### Indexes
@@ -175,28 +171,28 @@ to be recorded. This can be changed to a `VARCHAR` if searching is not required.
 
 ## Memory Usage (and gotchas)
 
-Any use of `read`, `write` or `update` with large files will cause problems with memory usage. The associated stream 
-methods have been optimised to use as little memory as possible. The adapter first saves the file to the local 
+Any use of `read` or `write` with large files will cause problems with memory usage. The associated stream
+methods have been optimised to use as little memory as possible. The adapter first saves the file to the local
 filesystem before transferring it to the database.
 
 ### Buffering
 
-On MySQL, the default behaviour is to buffer all query results. When reading a file back from the database this could 
-cause memory problems. There is a configuration option which disables the buffering. This has the side effect that the 
+On MySQL, the default behaviour is to buffer all query results. When reading a file back from the database this could
+cause memory problems. There is a configuration option which disables the buffering. This has the side effect that the
 pdo connection specified in the constructor is altered to set this attribute.
 
 ### Compression
 
-Compression is especially useful when storing text based files. The compression option defaults to on. The side effect 
-of this is that when reading files back some files may cause larger than expected memory usage. As an example, a very 
-large file filled with a single letter 'a', can be compressed to a tiny size. When that file is read, the tiny chunk is 
+Compression is especially useful when storing text based files. The compression option defaults to on. The side effect
+of this is that when reading files back some files may cause larger than expected memory usage. As an example, a very
+large file filled with a single letter 'a', can be compressed to a tiny size. When that file is read, the tiny chunk is
 expanded and will fill the memory.
 
 When a file is stored, the setting for compression is stored with it. This can not be changed.
 
 ## Chunking
 
-Chunking has been implemented to aid where systems have been set up for replication. Packet sizes are a consideration 
+Chunking has been implemented to aid where systems have been set up for replication. Packet sizes are a consideration
 here.
 
 ## License
