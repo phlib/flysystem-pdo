@@ -6,6 +6,7 @@ CREATE TABLE flysystem_path (
   visibility TEXT,
   size INTEGER DEFAULT NULL,
   is_compressed INTEGER DEFAULT 1,
+  expiry TEXT DEFAULT NULL,
   update_ts TEXT NOT NULL DEFAULT 0,
   PRIMARY KEY (path_id)
 );

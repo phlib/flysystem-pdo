@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+### Changed
+- DB schema has been updated to include the optional `expiry` column.
+### Fixed
+- Type error when using `deleteExpired()`.
 
 ## [2.0.0] - 2022-08-22
 ### Added

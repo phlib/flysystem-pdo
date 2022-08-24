@@ -118,6 +118,39 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $meta);
     }
 
+    public function testWriteWithExpiry(): void
+    {
+        $this->setupBasicDbResponse();
+
+        $pathId = rand(1, 1000);
+
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn((string)$pathId);
+
+        $path = '/some/path/to/file.txt';
+        $content = 'Test Content';
+        $expiry = date('Y-m-d H:i:s', strtotime('+2 day'));
+        $config = new Config([
+            'expiry' => $expiry,
+        ]);
+
+        $actual = $this->adapter
+            ->write($path, $content, $config);
+
+        $expected = [
+            'path_id' => $pathId,
+            'type' => 'file',
+            'path' => $path,
+            'timestamp' => time(),
+            'mimetype' => 'text/plain',
+            'size' => strlen($content),
+            'visibility' => 'public',
+            'expiry' => $expiry,
+        ];
+        static::assertSame($expected, $actual);
+    }
+
     public function testWriteWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
@@ -257,6 +290,47 @@ class PdoAdapterTest extends TestCase
             ->update($path, $content, $this->emptyConfig);
 
         static::assertSame(strlen($content), $meta['size']);
+    }
+
+    public function testUpdateWithExpiry(): void
+    {
+        $pathId = rand(1, 1000);
+
+        $path = '/some/path/to/file.txt';
+        $content = 'Test Content';
+        $expiry = date('Y-m-d H:i:s', strtotime('+2 day'));
+        $config = new Config([
+            'expiry' => $expiry,
+        ]);
+
+        $data = [
+            'path_id' => $pathId,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
+            'is_compressed' => false,
+            // no expiry set
+            'update_ts' => date('Y-m-d H:i:s'),
+        ];
+
+        $this->setupDbFetchResponse($data);
+
+        $actual = $this->adapter
+            ->update($path, $content, $config);
+
+        $expected = [
+            'path_id' => $pathId,
+            'type' => 'file',
+            'path' => $path,
+            'timestamp' => time(),
+            'mimetype' => 'text/plain',
+            'size' => strlen($content),
+            'visibility' => 'public',
+            'expiry' => $expiry,
+        ];
+        static::assertSame($expected, $actual);
     }
 
     public function testUpdateWithDbFailure(): void
@@ -641,6 +715,111 @@ class PdoAdapterTest extends TestCase
         static::assertFalse($this->adapter->has('/this/path'));
     }
 
+    public function testRead(): void
+    {
+        $pathId = rand(1, 1000);
+        $size = rand(1000, 99999);
+        $path = '/path/to/file.txt';
+        $updateTs = date('Y-m-d H:i:s');
+
+        $this->setupDbFetchResponse([
+            'path_id' => $pathId,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => $size,
+            'is_compressed' => false,
+            'update_ts' => $updateTs,
+        ]);
+
+        $expected = [
+            'path_id' => $pathId,
+            'type' => 'file',
+            'path' => '/path/to/file.txt',
+            'timestamp' => strtotime($updateTs),
+            'mimetype' => 'text/plain',
+            'size' => $size,
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'contents' => '',
+        ];
+
+        $actual = $this->adapter->read($path);
+        static::assertSame($expected, $actual);
+    }
+
+    public function testReadWithExpiryFuture(): void
+    {
+        $pathId = rand(1, 1000);
+        $size = rand(1000, 99999);
+        $path = '/path/to/file.txt';
+        $updateTs = date('Y-m-d H:i:s');
+        $expiry = date('Y-m-d H:i:s', strtotime('+2 day'));
+
+        $this->setupDbFetchResponse([
+            'path_id' => $pathId,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => $size,
+            'is_compressed' => false,
+            'expiry' => $expiry,
+            'update_ts' => $updateTs,
+        ]);
+
+        $expected = [
+            'path_id' => $pathId,
+            'type' => 'file',
+            'path' => '/path/to/file.txt',
+            'timestamp' => strtotime($updateTs),
+            'mimetype' => 'text/plain',
+            'size' => $size,
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'expiry' => $expiry,
+            'contents' => '',
+        ];
+
+        $actual = $this->adapter->read($path);
+        static::assertSame($expected, $actual);
+    }
+
+    public function testReadWithExpiryPast(): void
+    {
+        $pathId = rand(1, 1000);
+        $size = rand(1000, 99999);
+        $path = '/path/to/file.txt';
+        $updateTs = date('Y-m-d H:i:s');
+        $expiry = date('Y-m-d H:i:s', strtotime('-2 day'));
+
+        $this->setupDbFetchResponse([
+            'path_id' => $pathId,
+            'path' => $path,
+            'type' => 'file',
+            'mimetype' => 'text/plain',
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'size' => $size,
+            'is_compressed' => false,
+            'expiry' => $expiry,
+            'update_ts' => $updateTs,
+        ]);
+
+        $expected = [
+            'path_id' => $pathId,
+            'type' => 'file',
+            'path' => '/path/to/file.txt',
+            'timestamp' => strtotime($updateTs),
+            'mimetype' => 'text/plain',
+            'size' => $size,
+            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+            'expiry' => $expiry,
+            'contents' => '',
+        ];
+
+        $actual = $this->adapter->read($path);
+        static::assertFalse($actual);
+    }
+
     public function testReadReturnsContents(): void
     {
         $path = '/path/to/file.txt';
@@ -848,6 +1027,89 @@ class PdoAdapterTest extends TestCase
             [$rowData, 'timestamp', $timestamp],
             [$rowData, 'visibility', $visibility],
         ];
+    }
+
+    public function testDeleteExpiredDefault(): void
+    {
+        $pathId = rand(1, 1000);
+
+        $rows = [[
+            'path_id' => $pathId,
+        ]];
+
+        $selectSql = static::stringContains('WHERE expiry <= :now');
+        $expiredStmt = $this->createMock(\PDOStatement::class);
+
+        $deleteSql = static::logicalAnd(
+            static::stringContains('DELETE FROM '),
+            static::stringContains('WHERE path_id = :path_id'),
+        );
+        $deleteStmt = $this->createMock(\PDOStatement::class);
+
+        $this->pdo->expects(static::exactly(2))
+            ->method('prepare')
+            ->withConsecutive(
+                [$selectSql],
+                [$deleteSql],
+            )
+            ->willReturnOnConsecutiveCalls(
+                $expiredStmt,
+                $deleteStmt,
+            );
+
+        $expiredStmt->expects(static::once())
+            ->method('execute')
+            ->with([
+                'now' => date('Y-m-d H:i:s'),
+            ])
+            ->willReturn(true);
+
+        $expiredStmt->expects(static::once())
+            ->method('fetchAll')
+            ->willReturn($rows);
+
+        $expiredStmt->expects(static::once())
+            ->method('rowCount')
+            ->willReturn(1);
+
+        $deleteStmt->expects(static::once())
+            ->method('execute')
+            ->with([
+                'path_id' => $pathId,
+            ])
+            ->willReturn(true);
+
+        $this->adapter->deleteExpired();
+    }
+
+    public function testDeleteExpiredSpecific(): void
+    {
+        $expiry = date('Y-m-d H:i:s', strtotime('+2 day'));
+
+        $selectSql = static::stringContains('WHERE expiry <= :now');
+        $expiredStmt = $this->createMock(\PDOStatement::class);
+
+        $this->pdo->expects(static::once())
+            ->method('prepare')
+            ->with($selectSql)
+            ->willReturn($expiredStmt);
+
+        $expiredStmt->expects(static::once())
+            ->method('execute')
+            ->with([
+                'now' => $expiry,
+            ])
+            ->willReturn(true);
+
+        $expiredStmt->expects(static::once())
+            ->method('fetchAll')
+            ->willReturn([]);
+
+        $expiredStmt->expects(static::once())
+            ->method('rowCount')
+            ->willReturn(0);
+
+        $this->adapter->deleteExpired($expiry);
     }
 
     /**

@@ -107,6 +107,38 @@ class IntegrationTest extends IntegrationTestCase
         ];
     }
 
+    public function testWrittenAndReadWithExpiryFuture(): void
+    {
+        $path = '/path/to/file.txt';
+        $expiry = date('Y-m-d H:i:s', strtotime('+2 day'));
+        $config = new Config([
+            'expiry' => $expiry,
+        ]);
+
+        $content = sha1(uniqid('Test content'));
+
+        $this->adapter->write($path, $content, $config);
+        $actual = $this->adapter->read($path);
+
+        static::assertSame($expiry, $actual['expiry']);
+    }
+
+    public function testWrittenAndReadWithExpiryPast(): void
+    {
+        $path = '/path/to/file.txt';
+        $expiry = date('Y-m-d H:i:s', strtotime('-2 day'));
+        $config = new Config([
+            'expiry' => $expiry,
+        ]);
+
+        $content = sha1(uniqid('Test content'));
+
+        $this->adapter->write($path, $content, $config);
+        $actual = $this->adapter->read($path);
+
+        static::assertFalse($actual);
+    }
+
     /**
      * @dataProvider updatedAndReadAreTheSameFileDataProvider
      */
@@ -153,6 +185,126 @@ class IntegrationTest extends IntegrationTestCase
             ['file_get_contents', 'update', 'readStream', $uncompressedConfig],
             ['file_get_contents', 'update', 'read', $uncompressedConfig],
         ];
+    }
+
+    public function testUpdateWhenExpiryFuture(): void
+    {
+        $path = '/path/to/file.txt';
+        $expiry = date('Y-m-d H:i:s', strtotime('+2 day'));
+        $config = new Config([
+            'expiry' => $expiry,
+        ]);
+
+        $content1 = sha1(uniqid('Test content 1'));
+        $content2 = sha1(uniqid('Test content 2'));
+
+        $this->adapter->write($path, $content1, $config);
+
+        $this->adapter->update($path, $content2, $this->emptyConfig);
+
+        $actual = $this->adapter->read($path);
+
+        static::assertSame($expiry, $actual['expiry']);
+    }
+
+    public function testUpdateWhenExpiryPast(): void
+    {
+        $path = '/path/to/file.txt';
+        $expiry = date('Y-m-d H:i:s', strtotime('-2 day'));
+        $config = new Config([
+            'expiry' => $expiry,
+        ]);
+
+        $content1 = sha1(uniqid('Test content 1'));
+        $content2 = sha1(uniqid('Test content 2'));
+
+        $this->adapter->write($path, $content1, $config);
+
+        $actual = $this->adapter->update($path, $content2, $this->emptyConfig);
+
+        static::assertFalse($actual);
+    }
+
+    public function testUpdateWithExpiryAddToFuture(): void
+    {
+        $path = '/path/to/file.txt';
+        $content = sha1(uniqid('Test content'));
+
+        $this->adapter->write($path, $content, $this->emptyConfig);
+
+        $expiry = date('Y-m-d H:i:s', strtotime('+2 day'));
+        $config = new Config([
+            'expiry' => $expiry,
+        ]);
+
+        $this->adapter->update($path, $content, $config);
+
+        $actual = $this->adapter->read($path);
+
+        static::assertSame($expiry, $actual['expiry']);
+    }
+
+    public function testUpdateWithExpiryAddToPast(): void
+    {
+        $path = '/path/to/file.txt';
+        $content = sha1(uniqid('Test content'));
+
+        $this->adapter->write($path, $content, $this->emptyConfig);
+
+        $expiry = date('Y-m-d H:i:s', strtotime('-2 day'));
+        $config = new Config([
+            'expiry' => $expiry,
+        ]);
+
+        $actual = $this->adapter->update($path, $content, $config);
+
+        static::assertFalse($actual);
+    }
+
+    public function testUpdateWithExpiryChangeToFuture(): void
+    {
+        $path = '/path/to/file.txt';
+        $content = sha1(uniqid('Test content'));
+
+        $expiry1 = date('Y-m-d H:i:s', strtotime('+2 day'));
+        $config1 = new Config([
+            'expiry' => $expiry1,
+        ]);
+
+        $this->adapter->write($path, $content, $config1);
+
+        $expiry2 = date('Y-m-d H:i:s', strtotime('+5 day'));
+        $config2 = new Config([
+            'expiry' => $expiry2,
+        ]);
+
+        $this->adapter->update($path, $content, $config2);
+
+        $actual = $this->adapter->read($path);
+
+        static::assertSame($expiry2, $actual['expiry']);
+    }
+
+    public function testUpdateWithExpiryChangeToPast(): void
+    {
+        $path = '/path/to/file.txt';
+        $content = sha1(uniqid('Test content'));
+
+        $expiry1 = date('Y-m-d H:i:s', strtotime('+2 day'));
+        $config1 = new Config([
+            'expiry' => $expiry1,
+        ]);
+
+        $this->adapter->write($path, $content, $config1);
+
+        $expiry2 = date('Y-m-d H:i:s', strtotime('-2 day'));
+        $config2 = new Config([
+            'expiry' => $expiry2,
+        ]);
+
+        $actual = $this->adapter->update($path, $content, $config2);
+
+        static::assertFalse($actual);
     }
 
     public function testCopyingFile(): void
@@ -357,6 +509,43 @@ class IntegrationTest extends IntegrationTestCase
         $actual = static::getTestDbAdapter()->query($select)->fetchColumn();
 
         static::assertSame(AdapterInterface::VISIBILITY_PRIVATE, $actual);
+    }
+
+    public function testDeleteExpired(): void
+    {
+        $content = sha1(uniqid('Test content'));
+
+        // File with no expiry
+        $pathNone = '/path/with/expiry-none.txt';
+        $this->adapter->write($pathNone, $content, $this->emptyConfig);
+
+        // File with past expiry
+        $pathPast = '/path/with/expiry-past.txt';
+        $expiryPast = date('Y-m-d H:i:s', strtotime('-2 day'));
+        $configPast = new Config([
+            'expiry' => $expiryPast,
+        ]);
+        $this->adapter->write($pathPast, $content, $configPast);
+
+        // File with future expiry
+        $pathFuture = '/path/with/expiry-future.txt';
+        $expiryFuture = date('Y-m-d H:i:s', strtotime('+2 day'));
+        $configFuture = new Config([
+            'expiry' => $expiryFuture,
+        ]);
+        $this->adapter->write($pathFuture, $content, $configFuture);
+
+        $listBefore = $this->adapter->listContents('/path/with');
+        static::assertCount(3, $listBefore);
+
+        $this->adapter->deleteExpired();
+
+        $listAfter = $this->adapter->listContents('/path/with');
+        static::assertCount(2, $listAfter);
+
+        // Check it's the expired one that has gone
+        $actual = $this->adapter->read($pathPast);
+        static::assertFalse($actual);
     }
 
     /**

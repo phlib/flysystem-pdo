@@ -6,6 +6,7 @@ CREATE TABLE `flysystem_path` (
   `visibility` VARCHAR(25) DEFAULT '',
   `size` INT UNSIGNED DEFAULT NULL, -- equivalent to storing 4G file
   `is_compressed` BOOL NOT NULL DEFAULT 1,
+  `expiry` TIMESTAMP NULL DEFAULT NULL,
   `update_ts` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`path_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
