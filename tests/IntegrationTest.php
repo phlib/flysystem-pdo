@@ -139,6 +139,25 @@ class IntegrationTest extends IntegrationTestCase
         static::assertFalse($actual);
     }
 
+    public function testWrittenAndReadWithAdditional(): void
+    {
+        $path = '/path/to/file.txt';
+        $additional = [
+            uniqid('key1') => sha1(uniqid('value1')),
+            uniqid('key2') => sha1(uniqid('value2')),
+        ];
+        $config = new Config([
+            'meta' => $additional,
+        ]);
+
+        $content = sha1(uniqid('Test content'));
+
+        $this->adapter->write($path, $content, $config);
+        $actual = $this->adapter->read($path);
+
+        static::assertSame($additional, $actual['meta']);
+    }
+
     /**
      * @dataProvider updatedAndReadAreTheSameFileDataProvider
      */
@@ -307,6 +326,81 @@ class IntegrationTest extends IntegrationTestCase
         static::assertFalse($actual);
     }
 
+    public function testUpdateWhenAdditionalSet(): void
+    {
+        $path = '/path/to/file.txt';
+        $additional = [
+            uniqid('key1') => sha1(uniqid('value1')),
+            uniqid('key2') => sha1(uniqid('value2')),
+        ];
+        $config = new Config([
+            'meta' => $additional,
+        ]);
+
+        $content1 = sha1(uniqid('Test content 1'));
+        $content2 = sha1(uniqid('Test content 2'));
+
+        $this->adapter->write($path, $content1, $config);
+
+        $this->adapter->update($path, $content2, $this->emptyConfig);
+
+        $actual = $this->adapter->read($path);
+
+        static::assertSame($additional, $actual['meta']);
+    }
+
+    public function testUpdateWithAdditionalAdd(): void
+    {
+        $path = '/path/to/file.txt';
+        $content = sha1(uniqid('Test content'));
+
+        $this->adapter->write($path, $content, $this->emptyConfig);
+
+        $additional = [
+            uniqid('key1') => sha1(uniqid('value1')),
+            uniqid('key2') => sha1(uniqid('value2')),
+        ];
+        $config = new Config([
+            'meta' => $additional,
+        ]);
+
+        $this->adapter->update($path, $content, $config);
+
+        $actual = $this->adapter->read($path);
+
+        static::assertSame($additional, $actual['meta']);
+    }
+
+    public function testUpdateWithAdditionalChange(): void
+    {
+        $path = '/path/to/file.txt';
+        $content = sha1(uniqid('Test content'));
+
+        $additional1 = [
+            uniqid('key1') => sha1(uniqid('value1')),
+            uniqid('key2') => sha1(uniqid('value2')),
+        ];
+        $config1 = new Config([
+            'meta' => $additional1,
+        ]);
+
+        $this->adapter->write($path, $content, $config1);
+
+        $additional2 = [
+            uniqid('key1') => sha1(uniqid('value1')),
+            uniqid('key2') => sha1(uniqid('value2')),
+        ];
+        $config2 = new Config([
+            'meta' => $additional2,
+        ]);
+
+        $this->adapter->update($path, $content, $config2);
+
+        $actual = $this->adapter->read($path);
+
+        static::assertSame($additional2, $actual['meta']);
+    }
+
     public function testCopyingFile(): void
     {
         $path1 = '/first.txt';
@@ -446,6 +540,23 @@ class IntegrationTest extends IntegrationTestCase
             [[$dir1, $dir2, $file1], 3],
             [[$dir1, $dir2, $dir3, $file1, $file2, $file3], 6],
         ];
+    }
+
+    public function testCreateDirectoryWithAdditional(): void
+    {
+        $path = '/new/directory';
+        $additional = [
+            uniqid('key1') => sha1(uniqid('value1')),
+            uniqid('key2') => sha1(uniqid('value2')),
+        ];
+        $config = new Config([
+            'meta' => $additional,
+        ]);
+
+        $this->adapter->createDir($path, $config);
+        $actual = $this->adapter->read($path);
+
+        static::assertSame($additional, $actual['meta']);
     }
 
     public function testDeletingDirectoryClearsAllFiles(): void

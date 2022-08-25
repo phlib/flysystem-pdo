@@ -98,7 +98,8 @@ class PdoAdapter implements AdapterInterface
         }
         $meta = null;
         if ($config->has('meta')) {
-            $meta = $data['meta'] = $config->get('meta');
+            $meta = $config->get('meta');
+            $data['meta'] = json_encode($meta);
         }
 
         $data['path_id'] = $this->insertPath(

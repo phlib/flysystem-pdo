@@ -6,9 +6,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Changed
-- DB schema has been updated to include the optional `expiry` column.
+- DB schema has been updated to include the optional `expiry` and `meta` columns.
+- DB schema character set has been updated to use `utf8mb4` instead of the
+  deprecated `utf8`.
 ### Fixed
 - Type error when using `deleteExpired()`.
+- Error in response data when writing a new file with additional metadata.
 
 ## [2.0.0] - 2022-08-22
 ### Added

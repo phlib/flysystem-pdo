@@ -151,6 +151,42 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $actual);
     }
 
+    public function testWriteWithAdditionalFields(): void
+    {
+        $this->setupBasicDbResponse();
+
+        $pathId = rand(1, 1000);
+
+        $this->pdo->expects(static::once())
+            ->method('lastInsertId')
+            ->willReturn((string)$pathId);
+
+        $path = '/some/path/to/file.txt';
+        $content = 'Test Content';
+        $additional = [
+            uniqid('key1') => sha1(uniqid('value1')),
+            uniqid('key2') => sha1(uniqid('value2')),
+        ];
+        $config = new Config([
+            'meta' => $additional,
+        ]);
+
+        $actual = $this->adapter
+            ->write($path, $content, $config);
+
+        $expected = [
+            'path_id' => $pathId,
+            'type' => 'file',
+            'path' => $path,
+            'timestamp' => time(),
+            'mimetype' => 'text/plain',
+            'size' => strlen($content),
+            'visibility' => 'public',
+            'meta' => $additional,
+        ];
+        static::assertSame($expected, $actual);
+    }
+
     public function testWriteWithDbFailure(): void
     {
         $this->setupBasicDbResponse(false);
@@ -329,6 +365,50 @@ class PdoAdapterTest extends TestCase
             'size' => strlen($content),
             'visibility' => 'public',
             'expiry' => $expiry,
+        ];
+        static::assertSame($expected, $actual);
+    }
+
+    public function testUpdateWithAdditionalFields(): void
+    {
+        $pathId = rand(1, 1000);
+
+        $path = '/some/path/to/file.txt';
+        $content = 'Test Content';
+        $additional = [
+            uniqid('key1') => sha1(uniqid('value1')),
+            uniqid('key2') => sha1(uniqid('value2')),
+        ];
+        $config = new Config([
+            'meta' => $additional,
+        ]);
+
+        $data = [
+            'path_id' => $pathId,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => 'public',
+            'size' => 214454,
+            'is_compressed' => false,
+            // no meta set
+            'update_ts' => date('Y-m-d H:i:s'),
+        ];
+
+        $this->setupDbFetchResponse($data);
+
+        $actual = $this->adapter
+            ->update($path, $content, $config);
+
+        $expected = [
+            'path_id' => $pathId,
+            'type' => 'file',
+            'path' => $path,
+            'timestamp' => time(),
+            'mimetype' => 'text/plain',
+            'size' => strlen($content),
+            'visibility' => 'public',
+            'meta' => $additional,
         ];
         static::assertSame($expected, $actual);
     }
@@ -658,15 +738,16 @@ class PdoAdapterTest extends TestCase
         $this->pdo->method('lastInsertId')
             ->willReturn((string)$pathId);
 
-        $owner = 'exampleFoo';
-        $meta = $this->adapter->createDir('/path', new Config([
-            'meta' => [
-                'owner' => $owner,
-            ],
+        $additional = [
+            uniqid('key1') => sha1(uniqid('value1')),
+            uniqid('key2') => sha1(uniqid('value2')),
+        ];
+        $actual = $this->adapter->createDir('/path', new Config([
+            'meta' => $additional,
         ]));
-        static::assertArrayHasKey('meta', $meta);
-        static::assertArrayHasKey('owner', $meta['meta']);
-        static::assertSame($owner, $meta['meta']['owner']);
+
+        static::assertArrayHasKey('meta', $actual);
+        static::assertSame($additional, $actual['meta']);
     }
 
     public function testCreateDirWithDbFailure(): void
