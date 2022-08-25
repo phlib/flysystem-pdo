@@ -107,15 +107,15 @@ class PdoAdapterTest extends TestCase
             ->write($path, $content, $this->emptyConfig);
 
         $expected = [
+            'path_id' => $pathId,
             'type' => 'file',
             'path' => $path,
-            'visibility' => 'public',
-            'size' => strlen($content),
-            'timestamp' => time(), // this is going to bite me in the arse!
-            'path_id' => $pathId,
+            'timestamp' => time(),
             'mimetype' => 'text/plain',
+            'size' => strlen($content),
+            'visibility' => 'public',
         ];
-        static::assertEquals($expected, $meta);
+        static::assertSame($expected, $meta);
     }
 
     public function testWriteWithDbFailure(): void
@@ -140,7 +140,7 @@ class PdoAdapterTest extends TestCase
                 $this->emptyConfig
             );
 
-        static::assertEquals('application/json', $meta['mimetype']);
+        static::assertSame('application/json', $meta['mimetype']);
     }
 
     public function testWriteDetectsMimetypeByContent(): void
@@ -157,7 +157,7 @@ class PdoAdapterTest extends TestCase
                 $this->emptyConfig
             );
 
-        static::assertEquals('image/gif', $meta['mimetype']);
+        static::assertSame('image/gif', $meta['mimetype']);
     }
 
     public function testWriteToStream(): void
@@ -176,15 +176,15 @@ class PdoAdapterTest extends TestCase
             ->writeStream($path, $handle, $this->emptyConfig);
 
         $expected = [
+            'path_id' => $pathId,
             'type' => 'file',
             'path' => $path,
-            'visibility' => 'public',
-            'size' => strlen($content),
-            'timestamp' => time(), // this is going to bite me in the arse!
-            'path_id' => $pathId,
+            'timestamp' => time(),
             'mimetype' => 'text/plain',
+            'size' => strlen($content),
+            'visibility' => 'public',
         ];
-        static::assertEquals($expected, $meta);
+        static::assertSame($expected, $meta);
     }
 
     public function testWriteToStreamWithDbFailure(): void
@@ -210,7 +210,7 @@ class PdoAdapterTest extends TestCase
                 $this->emptyConfig
             );
 
-        static::assertEquals('application/json', $meta['mimetype']);
+        static::assertSame('application/json', $meta['mimetype']);
     }
 
     /**
@@ -256,7 +256,7 @@ class PdoAdapterTest extends TestCase
         $meta = $this->adapter
             ->update($path, $content, $this->emptyConfig);
 
-        static::assertEquals(strlen($content), $meta['size']);
+        static::assertSame(strlen($content), $meta['size']);
     }
 
     public function testUpdateWithDbFailure(): void
@@ -286,7 +286,7 @@ class PdoAdapterTest extends TestCase
         $meta = $this->adapter
             ->update($path, '', $this->emptyConfig);
 
-        static::assertEquals('application/json', $meta['mimetype']);
+        static::assertSame('application/json', $meta['mimetype']);
     }
 
     public function testUpdateDetectsMimetypeByContent(): void
@@ -311,7 +311,7 @@ class PdoAdapterTest extends TestCase
                 $this->emptyConfig
             );
 
-        static::assertEquals('image/gif', $meta['mimetype']);
+        static::assertSame('image/gif', $meta['mimetype']);
     }
 
     public function testUpdateToStream(): void
@@ -334,7 +334,7 @@ class PdoAdapterTest extends TestCase
         $meta = $this->adapter
             ->updateStream($path, $content, $this->emptyConfig);
 
-        static::assertEquals(strlen($content), $meta['size']);
+        static::assertSame(strlen($content), $meta['size']);
     }
 
     public function testUpdateToStreamWithDbFailure(): void
@@ -365,7 +365,7 @@ class PdoAdapterTest extends TestCase
         $meta = $this->adapter
             ->updateStream($path, $handle, $this->emptyConfig);
 
-        static::assertEquals('application/json', $meta['mimetype']);
+        static::assertSame('application/json', $meta['mimetype']);
     }
 
     public function testUpdateToStreamFailsToDetectsMimetypeByContent(): void
@@ -574,7 +574,7 @@ class PdoAdapterTest extends TestCase
             ->willReturn((string)$pathId);
 
         $meta = $this->adapter->createDir('/path', $this->emptyConfig);
-        static::assertEquals($pathId, $meta['path_id']);
+        static::assertSame($pathId, $meta['path_id']);
     }
 
     public function testCreateDirWithAdditionalFields(): void
@@ -592,7 +592,7 @@ class PdoAdapterTest extends TestCase
         ]));
         static::assertArrayHasKey('meta', $meta);
         static::assertArrayHasKey('owner', $meta['meta']);
-        static::assertEquals($owner, $meta['meta']['owner']);
+        static::assertSame($owner, $meta['meta']['owner']);
     }
 
     public function testCreateDirWithDbFailure(): void
@@ -823,7 +823,7 @@ class PdoAdapterTest extends TestCase
     {
         $method = 'get' . ucfirst($attribute);
         $this->setupDbFetchResponse($rowData);
-        static::assertEquals($expectValue, $this->adapter->{$method}($rowData['path'])[$attribute]);
+        static::assertSame($expectValue, $this->adapter->{$method}($rowData['path'])[$attribute]);
     }
 
     public function individualAttributeGetMethodsDataProvider(): array
