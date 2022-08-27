@@ -53,6 +53,11 @@ abstract class IntegrationTestCase extends TestCase
             foreach ($createSql as $sql) {
                 static::$testDbAdapter->query($sql);
             }
+
+            if (static::$driver === 'mysql') {
+                $timezone = date_default_timezone_get();
+                static::$testDbAdapter->query("SET time_zone = '{$timezone}'");
+            }
         }
 
         return static::$testDbAdapter;

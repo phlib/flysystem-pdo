@@ -716,6 +716,44 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame(AdapterInterface::VISIBILITY_PRIVATE, $actual);
     }
 
+    public function testGetMetadata(): void
+    {
+        $path = '/path/to/file.txt';
+        $contents = file_get_contents(static::$tempFiles['10K']);
+        $timestamp = time();
+
+        $this->adapter->write($path, $contents, $this->emptyConfig);
+        $actual = $this->adapter->getMetadata($path);
+
+        $expected = [
+            'path_id' => 1,
+            'type' => 'file',
+            'path' => $path,
+            'timestamp' => $timestamp,
+            'mimetype' => 'text/plain',
+            'size' => strlen($contents),
+            'visibility' => AdapterInterface::VISIBILITY_PUBLIC,
+        ];
+        static::assertSame($expected, $actual);
+
+        // individual attributes
+        static::assertSame([
+            'size' => strlen($contents),
+        ], $this->adapter->getSize($path));
+
+        static::assertSame([
+            'mimetype' => 'text/plain',
+        ], $this->adapter->getMimetype($path));
+
+        static::assertSame([
+            'timestamp' => $timestamp,
+        ], $this->adapter->getTimestamp($path));
+
+        static::assertSame([
+            'visibility' => AdapterInterface::VISIBILITY_PUBLIC,
+        ], $this->adapter->getVisibility($path));
+    }
+
     public function testDeleteExpired(): void
     {
         $content = sha1(uniqid('Test content'));
