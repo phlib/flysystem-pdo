@@ -465,6 +465,29 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($origDataSet, $copyDataSet);
     }
 
+    public function testRenameFile(): void
+    {
+        $path1 = '/first.txt';
+        $path2 = '/second.txt';
+
+        $testContent = file_get_contents(static::$tempFiles['10B']);
+
+        $this->adapter->write($path1, $testContent, $this->emptyConfig);
+
+        // Check successfully written, first
+        $actualOld = $this->adapter->read($path1);
+        static::assertSame($testContent, $actualOld['contents']);
+
+        // Perform rename; check original path is now missing and new path is present
+        $this->adapter->rename($path1, $path2);
+
+        $actual1New = $this->adapter->read($path1);
+        $actual2New = $this->adapter->read($path2);
+
+        static::assertFalse($actual1New);
+        static::assertSame($testContent, $actual2New['contents']);
+    }
+
     /**
      * @dataProvider pathsDataProvider
      */
