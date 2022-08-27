@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+### Added
+- Allow `rename()` to work on directories where no specific directory entry exists. 
 ### Changed
 - DB schema has been updated to include the optional `expiry` and `meta` columns.
 - DB schema character set has been updated to use `utf8mb4` instead of the

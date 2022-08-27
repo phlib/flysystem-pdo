@@ -201,27 +201,29 @@ class PdoAdapter implements AdapterInterface
      */
     public function rename($path, $newpath): bool
     {
-        $data = $this->findPathData($path);
-        if (!is_array($data)) {
-            return false;
-        }
-
         $update = "UPDATE {$this->pathTable} SET path = :newpath WHERE path_id = :path_id";
         $stmt = $this->db->prepare($update);
 
         // rename the primary node first
-        $result = $stmt->execute([
-            'newpath' => $newpath,
-            'path_id' => $data['path_id'],
-        ]);
-        if (!$result) {
-            return false;
+        $data = $this->findPathData($path);
+        if (is_array($data)) {
+            $result = $stmt->execute([
+                'newpath' => $newpath,
+                'path_id' => $data['path_id'],
+            ]);
+            if (!$result) {
+                return false;
+            }
         }
 
-        // rename all children when it's directory
-        if ($data['type'] === self::TYPE_DIRECTORY) {
+        // rename all children when it's directory; it may be a directory if no record was found for exact match
+        if ($data === false || $data['type'] === self::TYPE_DIRECTORY) {
             $pathLength = strlen($path);
             $listing = $this->listContents($path, true);
+            if ($data === false && empty($listing)) {
+                // No exact match, no children => it doesn't exist
+                return false;
+            }
             foreach ($listing as $item) {
                 $newItemPath = $newpath . substr($item['path'], $pathLength);
                 $stmt->execute([

@@ -489,6 +489,77 @@ class IntegrationTest extends IntegrationTestCase
     }
 
     /**
+     * @dataProvider dataRenameDirectory
+     */
+    public function testRenameDirectory(bool $withDir): void
+    {
+        $oldDir = 'some/dir';
+        $newDir = 'new/dir';
+
+        $path1Old = $oldDir . '/first.txt';
+        $path2Old = $oldDir . '/second.txt';
+        $path1New = $newDir . '/first.txt';
+        $path2New = $newDir . '/second.txt';
+        $path3 = 'different/third.txt';
+
+        $testContent = file_get_contents(static::$tempFiles['10B']);
+
+        if ($withDir) {
+            // Write and verify the starting directory
+            $this->adapter->createDir($oldDir, $this->emptyConfig);
+            $actualDir = $this->adapter->read($oldDir);
+            static::assertSame('dir', $actualDir['type']);
+            static::assertSame($oldDir, $actualDir['path']);
+        }
+
+        // Write and verify the starting files
+        $this->adapter->write($path1Old, $testContent, $this->emptyConfig);
+        $this->adapter->write($path2Old, $testContent, $this->emptyConfig);
+        $this->adapter->write($path3, $testContent, $this->emptyConfig);
+
+        $actual1 = $this->adapter->read($path1Old);
+        $actual2 = $this->adapter->read($path2Old);
+        $actual3 = $this->adapter->read($path3);
+
+        static::assertSame($testContent, $actual1['contents']);
+        static::assertSame($testContent, $actual2['contents']);
+        static::assertSame($testContent, $actual3['contents']);
+
+        // Perform rename; check original paths are now missing and new paths are present
+        $this->adapter->rename($oldDir, $newDir);
+
+        if ($withDir) {
+            // Write and verify the starting directory
+            $actualOldDir = $this->adapter->read($oldDir);
+            $actualNewDir = $this->adapter->read($newDir);
+            static::assertFalse($actualOldDir);
+            static::assertSame($newDir, $actualNewDir['path']);
+        }
+
+        $actual1Old = $this->adapter->read($path1Old);
+        $actual2Old = $this->adapter->read($path2Old);
+        static::assertFalse($actual1Old);
+        static::assertFalse($actual2Old);
+
+        $actual1New = $this->adapter->read($path1New);
+        $actual2New = $this->adapter->read($path2New);
+        static::assertSame($testContent, $actual1New['contents']);
+        static::assertSame($testContent, $actual2New['contents']);
+
+        // Validation; check different path is not affected
+        $actual3Old = $this->adapter->read($path3);
+        static::assertSame($testContent, $actual3Old['contents']);
+    }
+
+    public function dataRenameDirectory(): array
+    {
+        return [
+            'withDirectory' => [true],
+            'withoutDirectory' => [false],
+        ];
+    }
+
+    /**
      * @dataProvider pathsDataProvider
      */
     public function testAddingPaths(array $paths, int $expectedRows): void
