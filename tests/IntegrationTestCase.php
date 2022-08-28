@@ -18,7 +18,7 @@ abstract class IntegrationTestCase extends TestCase
 
     final protected static function getTestDbAdapter(): \PDO
     {
-        if (!isset(self::$testDbAdapter)) {
+        if (!isset(static::$testDbAdapter)) {
             // @todo allow tests to use alternative to MySQL
             $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
             static::$driver = 'mysql';
@@ -33,7 +33,8 @@ abstract class IntegrationTestCase extends TestCase
                 ]
             );
         }
-        return self::$testDbAdapter;
+
+        return static::$testDbAdapter;
     }
 
     final protected static function getDbDriverName(): string
@@ -113,7 +114,7 @@ abstract class IntegrationTestCase extends TestCase
     final protected static function assertRowCount(int $expectedCount, string $tableName, string $message = ''): void
     {
         $sql = 'SELECT COUNT(*) FROM ' . $tableName;
-        $rowCount = (int)self::getTestDbAdapter()->query($sql)->fetchColumn();
+        $rowCount = (int)static::getTestDbAdapter()->query($sql)->fetchColumn();
 
         static::assertSame($expectedCount, $rowCount, $message);
     }
