@@ -18,10 +18,21 @@ abstract class IntegrationTestCase extends TestCase
 
     final protected static function getTestDbAdapter(): \PDO
     {
-        if (!isset(self::$testDbAdapter)) {
-            // @todo allow tests to use alternative to MySQL
-            $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
-            static::$driver = 'mysql';
+        if (!isset(static::$testDbAdapter)) {
+            static::$driver = getenv('DB_DRIVER');
+            switch (static::$driver) {
+                case 'mysql':
+                    $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
+                    $createSqlFile = __DIR__ . '/../schema/mysql.sql';
+                    break;
+                case 'sqlite':
+                    $dsn = 'sqlite::memory:';
+                    $createSqlFile = __DIR__ . '/../schema/sqlite.sql';
+                    break;
+                default:
+                    throw new \DomainException('Unsupported DB driver');
+            }
+
             static::$testDbAdapter = new \PDO(
                 $dsn,
                 getenv('DB_USERNAME'),
@@ -32,8 +43,19 @@ abstract class IntegrationTestCase extends TestCase
                     \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
                 ]
             );
+
+            static::$testDbAdapter->query('DROP TABLE IF EXISTS flysystem_chunk');
+            static::$testDbAdapter->query('DROP TABLE IF EXISTS flysystem_path');
+
+            $createSql = explode(';', file_get_contents($createSqlFile));
+            // Remove the element that contains only the file's trailing line
+            array_pop($createSql);
+            foreach ($createSql as $sql) {
+                static::$testDbAdapter->query($sql);
+            }
         }
-        return self::$testDbAdapter;
+
+        return static::$testDbAdapter;
     }
 
     final protected static function getDbDriverName(): string
@@ -106,14 +128,14 @@ abstract class IntegrationTestCase extends TestCase
 
         parent::setUp();
 
-        static::getTestDbAdapter()->query('TRUNCATE flysystem_path');
-        static::getTestDbAdapter()->query('TRUNCATE flysystem_chunk');
+        static::getTestDbAdapter()->query('DELETE FROM flysystem_path');
+        static::getTestDbAdapter()->query('DELETE FROM flysystem_chunk');
     }
 
     final protected static function assertRowCount(int $expectedCount, string $tableName, string $message = ''): void
     {
         $sql = 'SELECT COUNT(*) FROM ' . $tableName;
-        $rowCount = (int)self::getTestDbAdapter()->query($sql)->fetchColumn();
+        $rowCount = (int)static::getTestDbAdapter()->query($sql)->fetchColumn();
 
         static::assertSame($expectedCount, $rowCount, $message);
     }

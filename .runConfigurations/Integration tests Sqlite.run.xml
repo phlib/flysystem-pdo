@@ -1,9 +1,8 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Integration tests" type="PHPUnitRunConfigurationType" factoryName="PHPUnit">
+  <configuration default="false" name="Integration tests Sqlite" type="PHPUnitRunConfigurationType" factoryName="PHPUnit">
     <CommandLine>
       <envs>
-        <env name="DB_DATABASE" value="test" />
-        <env name="DB_USERNAME" value="root" />
+        <env name="DB_DRIVER" value="sqlite" />
         <env name="INTEGRATION_ENABLED" value="1" />
       </envs>
     </CommandLine>

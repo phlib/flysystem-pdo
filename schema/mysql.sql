@@ -1,5 +1,3 @@
-# noinspection SqlNoDataSourceInspectionForFile
-
 CREATE TABLE `flysystem_path` (
   `path_id` MEDIUMINT UNSIGNED NOT NULL AUTO_INCREMENT, -- 16,777,215
   `type` ENUM('dir', 'file') NOT NULL,
@@ -18,4 +16,3 @@ CREATE TABLE `flysystem_chunk` (
   `content` MEDIUMBLOB NOT NULL, -- allows up to 16M of binary data
   PRIMARY KEY (`path_id`,`chunk_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-

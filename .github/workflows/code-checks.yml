@@ -14,10 +14,14 @@ jobs:
           - '7.4'
           - '8.0'
           - '8.1'
+        db:
+          - mysql
+          - sqlite
 
-    name: PHP ${{ matrix.php }} tests
+    name: PHP ${{ matrix.php }} ${{ matrix.db }} tests
 
     env:
+      DB_DRIVER: ${{ matrix.db }}
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
       DB_USERNAME: root
@@ -29,11 +33,11 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Set up MySQL
+        if: ${{ matrix.db == 'mysql' }}
         run: |
           sudo /etc/init.d/mysql start
           mysql -e 'SHOW VARIABLES LIKE "version%";' -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }}
           mysql -e 'CREATE DATABASE ${{ env.DB_DATABASE }};' -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }}
-          mysql -h${{ env.DB_HOST }} -P${{ env.DB_PORT }} -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }} ${{ env.DB_DATABASE }} < schema/mysql.sql
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2

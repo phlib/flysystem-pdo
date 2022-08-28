@@ -1,4 +1,3 @@
-
 CREATE TABLE flysystem_path (
   path_id INTEGER NOT NULL,
   type TEXT NOT NULL,
