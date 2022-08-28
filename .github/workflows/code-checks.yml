@@ -33,7 +33,6 @@ jobs:
           sudo /etc/init.d/mysql start
           mysql -e 'SHOW VARIABLES LIKE "version%";' -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }}
           mysql -e 'CREATE DATABASE ${{ env.DB_DATABASE }};' -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }}
-          mysql -h${{ env.DB_HOST }} -P${{ env.DB_PORT }} -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }} ${{ env.DB_DATABASE }} < schema/mysql.sql
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2

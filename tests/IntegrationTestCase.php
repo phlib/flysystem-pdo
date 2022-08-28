@@ -21,6 +21,7 @@ abstract class IntegrationTestCase extends TestCase
         if (!isset(static::$testDbAdapter)) {
             // @todo allow tests to use alternative to MySQL
             $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
+            $createSqlFile = __DIR__ . '/../schema/mysql.sql';
             static::$driver = 'mysql';
             static::$testDbAdapter = new \PDO(
                 $dsn,
@@ -32,6 +33,16 @@ abstract class IntegrationTestCase extends TestCase
                     \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
                 ]
             );
+
+            static::$testDbAdapter->query('DROP TABLE IF EXISTS flysystem_chunk');
+            static::$testDbAdapter->query('DROP TABLE IF EXISTS flysystem_path');
+
+            $createSql = explode(';', file_get_contents($createSqlFile));
+            // Remove the element that contains only the file's trailing line
+            array_pop($createSql);
+            foreach ($createSql as $sql) {
+                static::$testDbAdapter->query($sql);
+            }
         }
 
         return static::$testDbAdapter;
