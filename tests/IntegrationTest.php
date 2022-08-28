@@ -13,52 +13,18 @@ use Phlib\Flysystem\Pdo\PdoAdapter;
  */
 class IntegrationTest extends IntegrationTestCase
 {
-    use MemoryTestTrait;
-
-    private static array $tempFiles = [];
+    protected static array $tempFileSize = [
+        '00B' => 0,
+        '10B' => 10,
+        '10K' => 10 * 1024,
+        'l' => 2 * 1024 * 1024,
+    ];
 
     private PdoAdapter $adapter;
 
     private Config $emptyConfig;
 
     private array $tempHandles = [];
-
-    public static function setUpBeforeClass(): void
-    {
-        parent::setUpBeforeClass();
-
-        if (!getenv('INTEGRATION_ENABLED')) {
-            // Integration test not enabled
-            return;
-        }
-
-        // create files
-        $tmpDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR;
-        $emptyFilename = $tmpDir . uniqid('flysystempdo-test-00B-', true);
-        $tenByteFilename = $tmpDir . uniqid('flysystempdo-test-10B-', true);
-        $tenKayFilename = $tmpDir . uniqid('flysystempdo-test-10K-', true);
-        $xlFilename = $tmpDir . uniqid('flysystempdo-test-xl-', true);
-        static::fillFile($emptyFilename, 0);
-        static::fillFile($tenByteFilename, 10);
-        static::fillFile($tenKayFilename, 10 * 1024);
-        static::fillFile($xlFilename, 10 * 1024 * 1024);
-        static::$tempFiles = [
-            '00B' => $emptyFilename,
-            '10B' => $tenByteFilename,
-            '10K' => $tenKayFilename,
-            'xl' => $xlFilename,
-        ];
-    }
-
-    public static function tearDownAfterClass(): void
-    {
-        foreach (static::$tempFiles as $file) {
-            if (is_file($file)) {
-                unlink($file);
-            }
-        }
-        parent::tearDownAfterClass();
-    }
 
     protected function setUp(): void
     {
@@ -253,78 +219,6 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($origDataSet, $copyDataSet);
     }
 
-    public function testMemoryUsageOnWritingStream(): void
-    {
-        $filename = static::$tempFiles['xl'];
-        $file = fopen($filename, 'r');
-        $path = '/path/to/file.txt';
-
-        $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($path, $file): void {
-            $this->adapter->writeStream($path, $file, $this->emptyConfig);
-        }, $variation);
-    }
-
-    public function testMemoryUsageOnReadingStreamWithBuffering(): void
-    {
-        $config = $this->emptyConfig;
-        if (static::getDbDriverName() === 'mysql') {
-            $config = new Config([
-                'enable_mysql_buffering' => true,
-            ]);
-        }
-        $adapter = new PdoAdapter(static::getTestDbAdapter(), $config);
-
-        $filename = static::$tempFiles['xl'];
-        $file = fopen($filename, 'r');
-        $path = '/path/to/file.txt';
-
-        $adapter->writeStream($path, $file, $this->emptyConfig);
-
-        $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($adapter, $path): void {
-            $adapter->readStream($path);
-        }, $variation);
-    }
-
-    public function testMemoryUsageOnReadingStreamWithoutBuffering(): void
-    {
-        if (static::getDbDriverName() !== 'mysql') {
-            static::markTestSkipped('Cannot test buffering on non mysql driver.');
-        }
-
-        $config = new Config([
-            'enable_mysql_buffering' => false,
-        ]);
-        $adapter = new PdoAdapter(static::getTestDbAdapter(), $config);
-
-        $filename = static::$tempFiles['xl'];
-        $file = fopen($filename, 'r');
-        $path = '/path/to/file.txt';
-
-        $adapter->writeStream($path, $file, $this->emptyConfig);
-
-        $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($adapter, $path): void {
-            $adapter->readStream($path);
-        }, $variation);
-    }
-
-    public function testMemoryUsageOnUpdateStream(): void
-    {
-        $path = '/path/to/file.txt';
-        $file = fopen(static::$tempFiles['10K'], 'r');
-        $this->adapter->writeStream($path, $file, $this->emptyConfig);
-        fclose($file);
-
-        $file = fopen(static::$tempFiles['xl'], 'r');
-
-        $variation = 1048576; // 1MiB
-        $this->memoryTest(function () use ($path, $file): void {
-            $this->adapter->updateStream($path, $file, $this->emptyConfig);
-        }, $variation);
-    }
-
     /**
      * @dataProvider pathsDataProvider
      */
@@ -414,10 +308,10 @@ class IntegrationTest extends IntegrationTestCase
 
     public function testDeletingFileClearsAllChunks(): void
     {
-        $file = file_get_contents(static::$tempFiles['xl']);
+        $file = file_get_contents(static::$tempFiles['l']);
         $this->adapter->write('/test.txt', $file, $this->emptyConfig);
 
-        static::assertRowCount(8, 'flysystem_chunk');
+        static::assertRowCount(2, 'flysystem_chunk');
         $this->adapter->delete('/test.txt');
         static::assertRowCount(0, 'flysystem_chunk');
     }
@@ -465,38 +359,10 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame(AdapterInterface::VISIBILITY_PRIVATE, $actual);
     }
 
-    protected static function fillFile($filename, $sizeKb): void
-    {
-        $chunkSize = 1024;
-        $handle = fopen($filename, 'wb+');
-        for ($i = 0; $i < $sizeKb; $i += $chunkSize) {
-            fwrite($handle, static::randomString($chunkSize), $chunkSize);
-        }
-        fclose($handle);
-    }
-
-    protected static function randomString($length): string
-    {
-        static $characters;
-        static $charLength;
-        if (!$characters) {
-            $characters = array_merge(range(0, 9), range('a', 'z'), range('A', 'Z'), [',', '.', ' ', "\n"]);
-            $charLength = count($characters);
-            shuffle($characters);
-        }
-
-        $string = '';
-        $end = ($charLength - 1);
-        for ($i = 0; $i < $length; $i++) {
-            $string .= $characters[rand(0, $end)];
-        }
-        return $string;
-    }
-
     /**
      * @return resource
      */
-    protected function createResource(string $filename)
+    private function createResource(string $filename)
     {
         $handle = fopen($filename, 'r');
         $this->tempHandles[] = $handle;
