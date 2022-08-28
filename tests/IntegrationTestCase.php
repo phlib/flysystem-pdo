@@ -19,10 +19,20 @@ abstract class IntegrationTestCase extends TestCase
     final protected static function getTestDbAdapter(): \PDO
     {
         if (!isset(static::$testDbAdapter)) {
-            // @todo allow tests to use alternative to MySQL
-            $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
-            $createSqlFile = __DIR__ . '/../schema/mysql.sql';
-            static::$driver = 'mysql';
+            static::$driver = getenv('DB_DRIVER');
+            switch (static::$driver) {
+                case 'mysql':
+                    $dsn = 'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
+                    $createSqlFile = __DIR__ . '/../schema/mysql.sql';
+                    break;
+                case 'sqlite':
+                    $dsn = 'sqlite::memory:';
+                    $createSqlFile = __DIR__ . '/../schema/sqlite.sql';
+                    break;
+                default:
+                    throw new \DomainException('Unsupported DB driver');
+            }
+
             static::$testDbAdapter = new \PDO(
                 $dsn,
                 getenv('DB_USERNAME'),
@@ -118,8 +128,8 @@ abstract class IntegrationTestCase extends TestCase
 
         parent::setUp();
 
-        static::getTestDbAdapter()->query('TRUNCATE flysystem_path');
-        static::getTestDbAdapter()->query('TRUNCATE flysystem_chunk');
+        static::getTestDbAdapter()->query('DELETE FROM flysystem_path');
+        static::getTestDbAdapter()->query('DELETE FROM flysystem_chunk');
     }
 
     final protected static function assertRowCount(int $expectedCount, string $tableName, string $message = ''): void
