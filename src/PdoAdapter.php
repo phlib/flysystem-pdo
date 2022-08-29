@@ -578,6 +578,9 @@ class PdoAdapter implements AdapterInterface
             'path' => $data['path'],
             'timestamp' => strtotime($data['update_ts']),
         ];
+        if ($this->db->getAttribute(\PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+            $meta['timestamp'] = strtotime($data['update_ts'] . ' +00:00');
+        }
         if ($data['type'] === self::TYPE_FILE) {
             $meta['mimetype'] = $data['mimetype'];
             $meta['size'] = (int)$data['size'];

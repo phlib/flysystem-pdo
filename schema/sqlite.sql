@@ -8,7 +8,7 @@ CREATE TABLE flysystem_path (
   is_compressed INTEGER DEFAULT 1,
   expiry TEXT DEFAULT NULL,
   meta TEXT DEFAULT NULL,
-  update_ts TEXT NOT NULL DEFAULT 0,
+  update_ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (path_id)
 );
 

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - DB schema has been updated to include the optional `expiry` and `meta` columns.
 - DB schema character set has been updated to use `utf8mb4` instead of the
   deprecated `utf8`.
+- DB schema for Sqlite updated to store current timestamp. Sqlite always runs as
+  UTC, so this is converted when retrieving the metadata.
 ### Fixed
 - Type error when using `deleteExpired()`.
 - Error in response data when writing a new file with additional metadata.
