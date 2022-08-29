@@ -133,8 +133,14 @@ abstract class IntegrationTestCase extends TestCase
 
         parent::setUp();
 
-        static::getTestDbAdapter()->query('DELETE FROM flysystem_path');
-        static::getTestDbAdapter()->query('DELETE FROM flysystem_chunk');
+        $db = static::getTestDbAdapter();
+        if (static::getDbDriverName() === 'sqlite') {
+            $db->query('DELETE FROM flysystem_path');
+            $db->query('DELETE FROM flysystem_chunk');
+        } else {
+            $db->query('TRUNCATE flysystem_path');
+            $db->query('TRUNCATE flysystem_chunk');
+        }
     }
 
     final protected static function assertRowCount(int $expectedCount, string $tableName, string $message = ''): void
