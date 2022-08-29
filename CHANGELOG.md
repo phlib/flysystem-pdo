@@ -5,6 +5,17 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+### Added
+- Allow `rename()` to work on directories where no specific directory entry exists. 
+### Changed
+- DB schema has been updated to include the optional `expiry` and `meta` columns.
+- DB schema character set has been updated to use `utf8mb4` instead of the
+  deprecated `utf8`.
+- DB schema for Sqlite updated to store current timestamp. Sqlite always runs as
+  UTC, so this is converted when retrieving the metadata.
+### Fixed
+- Type error when using `deleteExpired()`.
+- Error in response data when writing a new file with additional metadata.
 
 ## [2.0.0] - 2022-08-22
 ### Added

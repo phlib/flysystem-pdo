@@ -37,6 +37,7 @@ jobs:
         run: |
           sudo /etc/init.d/mysql start
           mysql -e 'SHOW VARIABLES LIKE "version%";' -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }}
+          mysql_tzinfo_to_sql /usr/share/zoneinfo | mysql -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }} mysql
           mysql -e 'CREATE DATABASE ${{ env.DB_DATABASE }};' -u${{ env.DB_USERNAME }} -p${{ env.DB_PASSWORD }}
 
       - name: Set up PHP

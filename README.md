@@ -65,8 +65,8 @@ $adapter = new PdoAdapter($pdo, $config);
 
 ## File Configuration
 
-The following file configurations were added in version 1.1. These configurations and associated schema changes are 
-optional.
+The following optional file configurations supplement the standard behaviour.
+The sample schemas include the columns, but they are optional and may be omitted.
 
 |Name|Type|Description|
 |----|----|-----------|
@@ -78,9 +78,6 @@ By specifying 'expiry' as a configuration parameter when writing or updating a f
 will store the value in a column called 'expiry'. When the information about the file is selected out, if the expiry
 exists and can be parsed by `strtotime`, then the expiry time will be evaluated. False is returned if the file doesn't
 exist or has expired.
-
-The schema for the expiry column can be anything that stores a value that will be evaluated by `strtotime`. Typically 
-this will be a `timestamp` column type.
 
 #### Example
 

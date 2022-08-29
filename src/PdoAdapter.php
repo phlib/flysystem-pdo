@@ -98,7 +98,8 @@ class PdoAdapter implements AdapterInterface
         }
         $meta = null;
         if ($config->has('meta')) {
-            $meta = $data['meta'] = $config->get('meta');
+            $meta = $config->get('meta');
+            $data['meta'] = json_encode($meta);
         }
 
         $data['path_id'] = $this->insertPath(
@@ -200,27 +201,29 @@ class PdoAdapter implements AdapterInterface
      */
     public function rename($path, $newpath): bool
     {
-        $data = $this->findPathData($path);
-        if (!is_array($data)) {
-            return false;
-        }
-
         $update = "UPDATE {$this->pathTable} SET path = :newpath WHERE path_id = :path_id";
         $stmt = $this->db->prepare($update);
 
         // rename the primary node first
-        $result = $stmt->execute([
-            'newpath' => $newpath,
-            'path_id' => $data['path_id'],
-        ]);
-        if (!$result) {
-            return false;
+        $data = $this->findPathData($path);
+        if (is_array($data)) {
+            $result = $stmt->execute([
+                'newpath' => $newpath,
+                'path_id' => $data['path_id'],
+            ]);
+            if (!$result) {
+                return false;
+            }
         }
 
-        // rename all children when it's directory
-        if ($data['type'] === self::TYPE_DIRECTORY) {
+        // rename all children when it's directory; it may be a directory if no record was found for exact match
+        if ($data === false || $data['type'] === self::TYPE_DIRECTORY) {
             $pathLength = strlen($path);
             $listing = $this->listContents($path, true);
+            if ($data === false && empty($listing)) {
+                // No exact match, no children => it doesn't exist
+                return false;
+            }
             foreach ($listing as $item) {
                 $newItemPath = $newpath . substr($item['path'], $pathLength);
                 $stmt->execute([
@@ -575,6 +578,9 @@ class PdoAdapter implements AdapterInterface
             'path' => $data['path'],
             'timestamp' => strtotime($data['update_ts']),
         ];
+        if ($this->db->getAttribute(\PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+            $meta['timestamp'] = strtotime($data['update_ts'] . ' +00:00');
+        }
         if ($data['type'] === self::TYPE_FILE) {
             $meta['mimetype'] = $data['mimetype'];
             $meta['size'] = (int)$data['size'];
@@ -681,7 +687,7 @@ class PdoAdapter implements AdapterInterface
 
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         foreach ($rows as $row) {
-            $this->deletePath($row['path_id']);
+            $this->deletePath((int)$row['path_id']);
         }
 
         return $stmt->rowCount();
