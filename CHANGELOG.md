@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+
+## [2.1.0] - 2022-09-01
 ### Added
 - Allow `rename()` to work on directories where no specific directory entry exists. 
 ### Changed
