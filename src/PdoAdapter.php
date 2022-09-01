@@ -396,12 +396,13 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        $resource = $this->getChunkResource($data['path_id'], (bool)$data['is_compressed']);
-
         $metadata = $this->normalizeMetadata($data);
-        $metadata['contents'] = stream_get_contents($resource);
 
-        fclose($resource);
+        if ($data['type'] === self::TYPE_FILE) {
+            $resource = $this->getChunkResource($data['path_id'], (bool)$data['is_compressed']);
+            $metadata['contents'] = stream_get_contents($resource);
+            fclose($resource);
+        }
 
         return $metadata;
     }
