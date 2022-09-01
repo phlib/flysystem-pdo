@@ -94,7 +94,15 @@ class PdoAdapter implements AdapterInterface
         ];
         $expiry = null;
         if ($config->has('expiry')) {
-            $expiry = $data['expiry'] = $config->get('expiry');
+            $expiry = $config->get('expiry');
+            if (!($expiry instanceof \DateTimeImmutable)) {
+                trigger_error(
+                    'phlib/flysystem-pdo: Setting expiry datetime as string is deprecated; use \DateTimeImmutable.',
+                    E_USER_DEPRECATED
+                );
+                $expiry = new \DateTimeImmutable($expiry);
+            }
+            $data['expiry'] = $expiry->format('Y-m-d H:i:s');
         }
         $meta = null;
         if ($config->has('meta')) {
@@ -165,7 +173,15 @@ class PdoAdapter implements AdapterInterface
         $data['size'] = filesize($filename);
         $data['mimetype'] = Util::guessMimeType($data['path'], $contents);
         if ($config->has('expiry')) {
-            $data['expiry'] = $config->get('expiry');
+            $expiry = $config->get('expiry');
+            if (!($expiry instanceof \DateTimeImmutable)) {
+                trigger_error(
+                    'phlib/flysystem-pdo: Setting expiry datetime as string is deprecated; use \DateTimeImmutable.',
+                    E_USER_DEPRECATED
+                );
+                $expiry = new \DateTimeImmutable($expiry);
+            }
+            $data['expiry'] = $expiry->format('Y-m-d H:i:s');
             $searchKeys[] = 'expiry';
         }
         if ($config->has('meta')) {
@@ -637,7 +653,7 @@ class PdoAdapter implements AdapterInterface
         string $mimeType = null,
         int $size = null,
         bool $enableCompression = true,
-        string $expiry = null,
+        \DateTimeImmutable $expiry = null,
         array $additional = null
     ) {
         $data = [
@@ -649,7 +665,7 @@ class PdoAdapter implements AdapterInterface
             'is_compressed' => (int)$enableCompression,
         ];
         if ($expiry !== null) {
-            $data['expiry'] = $expiry;
+            $data['expiry'] = $expiry->format('Y-m-d H:i:s');
         }
         if ($additional !== null) {
             $data['meta'] = json_encode($additional);
@@ -671,13 +687,20 @@ class PdoAdapter implements AdapterInterface
     }
 
     /**
-     * @param string|null $now Timestamp in expected format for query
+     * @param \DateTimeImmutable|string|null $now Timestamp in expected format for query
      * @return int Number of expired files deleted
      */
-    public function deleteExpired(?string $now = null): int
+    public function deleteExpired($now = null): int
     {
         if ($now === null) {
             $now = date('Y-m-d H:i:s');
+        } elseif ($now instanceof \DateTimeImmutable) {
+            $now = $now->format('Y-m-d H:i:s');
+        } else {
+            trigger_error(
+                'phlib/flysystem-pdo: Setting expiry datetime as string is deprecated; use \DateTimeImmutable.',
+                E_USER_DEPRECATED
+            );
         }
 
         $select = "SELECT path_id FROM {$this->pathTable} WHERE expiry <= :now";
