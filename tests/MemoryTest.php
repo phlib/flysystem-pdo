@@ -64,7 +64,7 @@ class MemoryTest extends IntegrationTestCase
         $file = fopen($filename, 'r');
         $path = '/path/to/file.txt';
 
-        $variation = 1048576; // 1MiB
+        $variation = 1; // MiB
         $this->memoryTest(function () use ($path, $file): void {
             $this->adapter->writeStream($path, $file, $this->emptyConfig);
         }, $variation);
@@ -86,7 +86,7 @@ class MemoryTest extends IntegrationTestCase
 
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
-        $variation = 1048576; // 1MiB
+        $variation = 1; // MiB
         $this->memoryTest(function () use ($adapter, $path): void {
             $adapter->readStream($path);
         }, $variation);
@@ -109,7 +109,7 @@ class MemoryTest extends IntegrationTestCase
 
         $adapter->writeStream($path, $file, $this->emptyConfig);
 
-        $variation = 1048576; // 1MiB
+        $variation = 1; // MiB
         $this->memoryTest(function () use ($adapter, $path): void {
             $adapter->readStream($path);
         }, $variation);
@@ -124,16 +124,16 @@ class MemoryTest extends IntegrationTestCase
 
         $file = fopen(static::$tempFiles['xl'], 'r');
 
-        $variation = 1048576; // 1MiB
+        $variation = 1; // MiB
         $this->memoryTest(function () use ($path, $file): void {
             $this->adapter->updateStream($path, $file, $this->emptyConfig);
         }, $variation);
     }
 
-    private function memoryTest(\Closure $unit, int $variation = 2): void
+    private function memoryTest(\Closure $unit, int $variationMiB = 1): void
     {
-        // convert variation from megabytes to bytes
-        $variation = $variation * 1048576;
+        // convert variation from mebibytes to bytes
+        $variation = $variationMiB * 1048576;
         if ($variation === PHP_INT_MAX) {
             throw new \InvalidArgumentException('Specified variation exceeds PHP_INT_MAX');
         }
@@ -144,9 +144,11 @@ class MemoryTest extends IntegrationTestCase
 
         $difference = $final - $initial;
 
-        $variationInMeg = round($variation / 1024 / 1024) . 'M';
-        $differenceInMeg = round(($difference - $variation) / 1024 / 1024, 1) . 'M';
-        $message = "The memory was exceeded by '{$differenceInMeg}' above the '{$variationInMeg}' variation limit.";
+        $message = sprintf(
+            'The memory was exceeded by %dMiB above the %dMiB variation limit.',
+            round(($difference - $variation) / 1024 / 1024, 1),
+            $variationMiB,
+        );
         static::assertLessThanOrEqual($variation, $difference, $message);
     }
 }
