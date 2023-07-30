@@ -1,6 +1,6 @@
 # phlib/flysystem-pdo
 
-[![Code Checks](https://img.shields.io/github/workflow/status/phlib/flysystem-pdo/CodeChecks?logo=github)](https://github.com/phlib/flysystem-pdo/actions/workflows/code-checks.yml)
+[![Code Checks](https://img.shields.io/github/actions/workflow/status/phlib/flysystem-pdo/code-checks.yml?logo=github)](https://github.com/phlib/flysystem-pdo/actions/workflows/code-checks.yml)
 [![Codecov](https://img.shields.io/codecov/c/github/phlib/flysystem-pdo.svg?logo=codecov)](https://codecov.io/gh/phlib/flysystem-pdo)
 [![Latest Stable Version](https://img.shields.io/packagist/v/phlib/flysystem-pdo.svg?logo=packagist)](https://packagist.org/packages/phlib/flysystem-pdo)
 [![Total Downloads](https://img.shields.io/packagist/dt/phlib/flysystem-pdo.svg?logo=packagist)](https://packagist.org/packages/phlib/flysystem-pdo)
