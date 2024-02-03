@@ -20,8 +20,8 @@
         "league/flysystem": "^1.0"
     },
     "require-dev": {
-        "symplify/easy-coding-standard": "^11",
-        "phpunit/phpunit": "^9"
+        "phpunit/phpunit": "^9",
+        "symplify/easy-coding-standard": "^12"
     },
     "autoload": {
         "psr-4": {
