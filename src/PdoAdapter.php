@@ -498,7 +498,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-        $rows = array_map([$this, 'normalizeMetadata'], $rows);
+        $rows = array_map($this->normalizeMetadata(...), $rows);
         if ($recursive) {
             $rows = Util::emulateDirectories($rows);
         }

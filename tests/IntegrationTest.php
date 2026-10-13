@@ -96,12 +96,12 @@ class IntegrationTest extends IntegrationTestCase
             'enable_compression' => false,
         ]);
         return [
-            [[$this, 'createResource'], 'writeStream', 'readStream', $compressionConfig],
-            [[$this, 'createResource'], 'writeStream', 'read', $compressionConfig],
+            [$this->createResource(...), 'writeStream', 'readStream', $compressionConfig],
+            [$this->createResource(...), 'writeStream', 'read', $compressionConfig],
             ['file_get_contents', 'write', 'readStream', $compressionConfig],
             ['file_get_contents', 'write', 'read', $compressionConfig],
-            [[$this, 'createResource'], 'writeStream', 'readStream', $uncompressedConfig],
-            [[$this, 'createResource'], 'writeStream', 'read', $uncompressedConfig],
+            [$this->createResource(...), 'writeStream', 'readStream', $uncompressedConfig],
+            [$this->createResource(...), 'writeStream', 'read', $uncompressedConfig],
             ['file_get_contents', 'write', 'readStream', $uncompressedConfig],
             ['file_get_contents', 'write', 'read', $uncompressedConfig],
         ];
@@ -219,12 +219,12 @@ class IntegrationTest extends IntegrationTestCase
             'enable_compression' => false,
         ]);
         return [
-            [[$this, 'createResource'], 'updateStream', 'readStream', $compressionConfig],
-            [[$this, 'createResource'], 'updateStream', 'read', $compressionConfig],
+            [$this->createResource(...), 'updateStream', 'readStream', $compressionConfig],
+            [$this->createResource(...), 'updateStream', 'read', $compressionConfig],
             ['file_get_contents', 'update', 'readStream', $compressionConfig],
             ['file_get_contents', 'update', 'read', $compressionConfig],
-            [[$this, 'createResource'], 'updateStream', 'readStream', $uncompressedConfig],
-            [[$this, 'createResource'], 'updateStream', 'read', $uncompressedConfig],
+            [$this->createResource(...), 'updateStream', 'readStream', $uncompressedConfig],
+            [$this->createResource(...), 'updateStream', 'read', $uncompressedConfig],
             ['file_get_contents', 'update', 'readStream', $uncompressedConfig],
             ['file_get_contents', 'update', 'read', $uncompressedConfig],
         ];
