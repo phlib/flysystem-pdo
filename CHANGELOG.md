@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+
+## [2.2.0] - 2026-10-13
 ### Changed
 - Set optional expiry date using \DateTimeImmutable. Setting the expiry value as
   a string is deprecated. Reading the file metadata will still return a string
