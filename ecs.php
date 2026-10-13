@@ -2,7 +2,6 @@
 
 /**
  * Phlib ECS config v2026-10; ECS >= v13.3
- * With @group PHPUnit annotations.
  */
 
 declare(strict_types=1);
@@ -32,12 +31,4 @@ return ECSConfig::configure()
     ->withSkip([
         // Remove sniff, from common/spaces
         \PhpCsFixer\Fixer\Operator\NotOperatorWithSuccessorSpaceFixer::class,
-    ])
-
-    // Rule from common/docblock. Do not remove @group annotation, used in unit tests
-    ->withConfiguredRule(
-        \PhpCsFixer\Fixer\Phpdoc\GeneralPhpdocAnnotationRemoveFixer::class,
-        [
-            'annotations' => ['author', 'package', /* 'group', */ 'category'],
-        ],
-    );
+    ]);
