@@ -7,10 +7,10 @@ namespace Phlib\Flysystem\Pdo\Tests;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
 use Phlib\Flysystem\Pdo\PdoAdapter;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 
-/**
- * @group integration
- */
+#[Group('integration')]
 class IntegrationTest extends IntegrationTestCase
 {
     protected static array $tempFileSize = [
@@ -60,17 +60,15 @@ class IntegrationTest extends IntegrationTestCase
         static::assertRowCount(0, 'flysystem_chunk');
     }
 
-    /**
-     * @dataProvider writtenAndReadAreTheSameFileDataProvider
-     */
+    #[DataProvider('writtenAndReadAreTheSameFileDataProvider')]
     public function testWrittenAndReadAreTheSameFile(
-        callable $fileCallback,
+        ?callable $fileCallback,
         string $writeMethod,
         string $readMethod,
         Config $config,
     ): void {
         $filename = static::$tempFiles['10K'];
-        $file = call_user_func($fileCallback, $filename);
+        $file = is_callable($fileCallback) ? $fileCallback($filename) : $this->createResource($filename);
 
         $path = '/path/to/file.txt';
         $this->adapter->{$writeMethod}($path, $file, $config);
@@ -87,7 +85,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($file, $meta['contents']);
     }
 
-    public function writtenAndReadAreTheSameFileDataProvider(): array
+    public static function writtenAndReadAreTheSameFileDataProvider(): array
     {
         $compressionConfig = new Config([
             'enable_compression' => true,
@@ -96,18 +94,18 @@ class IntegrationTest extends IntegrationTestCase
             'enable_compression' => false,
         ]);
         return [
-            [$this->createResource(...), 'writeStream', 'readStream', $compressionConfig],
-            [$this->createResource(...), 'writeStream', 'read', $compressionConfig],
+            [null, 'writeStream', 'readStream', $compressionConfig],
+            [null, 'writeStream', 'read', $compressionConfig],
             ['file_get_contents', 'write', 'readStream', $compressionConfig],
             ['file_get_contents', 'write', 'read', $compressionConfig],
-            [$this->createResource(...), 'writeStream', 'readStream', $uncompressedConfig],
-            [$this->createResource(...), 'writeStream', 'read', $uncompressedConfig],
+            [null, 'writeStream', 'readStream', $uncompressedConfig],
+            [null, 'writeStream', 'read', $uncompressedConfig],
             ['file_get_contents', 'write', 'readStream', $uncompressedConfig],
             ['file_get_contents', 'write', 'read', $uncompressedConfig],
         ];
     }
 
-    public function dataExpiry(): array
+    public static function dataExpiry(): array
     {
         $future = new \DateTimeImmutable('+2 day');
         $past = new \DateTimeImmutable('-2 day');
@@ -125,9 +123,7 @@ class IntegrationTest extends IntegrationTestCase
         ];
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testWrittenAndReadWithExpiryFuture($future, $past, string $futureString): void
     {
         $path = '/path/to/file.txt';
@@ -144,9 +140,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($futureString, $actual['expiry']);
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testWrittenAndReadWithExpiryPast($future, $past): void
     {
         $path = '/path/to/file.txt';
@@ -182,11 +176,9 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($additional, $actual['meta']);
     }
 
-    /**
-     * @dataProvider updatedAndReadAreTheSameFileDataProvider
-     */
+    #[DataProvider('updatedAndReadAreTheSameFileDataProvider')]
     public function testUpdatedAndReadAreTheSameFile(
-        callable $fileCallback,
+        ?callable $fileCallback,
         string $updateMethod,
         string $readMethod,
         Config $config,
@@ -195,7 +187,7 @@ class IntegrationTest extends IntegrationTestCase
         $this->adapter->write($path, file_get_contents(static::$tempFiles['10B']), $this->emptyConfig);
 
         $filename = static::$tempFiles['10K'];
-        $file = call_user_func($fileCallback, $filename);
+        $file = is_callable($fileCallback) ? $fileCallback($filename) : $this->createResource($filename);
 
         $this->adapter->{$updateMethod}($path, $file, $config);
         $meta = $this->adapter->{$readMethod}($path);
@@ -210,7 +202,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($file, $meta['contents']);
     }
 
-    public function updatedAndReadAreTheSameFileDataProvider(): array
+    public static function updatedAndReadAreTheSameFileDataProvider(): array
     {
         $compressionConfig = new Config([
             'enable_compression' => true,
@@ -219,20 +211,18 @@ class IntegrationTest extends IntegrationTestCase
             'enable_compression' => false,
         ]);
         return [
-            [$this->createResource(...), 'updateStream', 'readStream', $compressionConfig],
-            [$this->createResource(...), 'updateStream', 'read', $compressionConfig],
+            [null, 'updateStream', 'readStream', $compressionConfig],
+            [null, 'updateStream', 'read', $compressionConfig],
             ['file_get_contents', 'update', 'readStream', $compressionConfig],
             ['file_get_contents', 'update', 'read', $compressionConfig],
-            [$this->createResource(...), 'updateStream', 'readStream', $uncompressedConfig],
-            [$this->createResource(...), 'updateStream', 'read', $uncompressedConfig],
+            [null, 'updateStream', 'readStream', $uncompressedConfig],
+            [null, 'updateStream', 'read', $uncompressedConfig],
             ['file_get_contents', 'update', 'readStream', $uncompressedConfig],
             ['file_get_contents', 'update', 'read', $uncompressedConfig],
         ];
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testUpdateWhenExpiryFuture($future, $past, string $futureString): void
     {
         $path = '/path/to/file.txt';
@@ -253,9 +243,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($futureString, $actual['expiry']);
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testUpdateWhenExpiryPast($future, $past): void
     {
         $path = '/path/to/file.txt';
@@ -274,9 +262,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertFalse($actual);
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testUpdateWithExpiryAddToFuture($future, $past, string $futureString): void
     {
         $path = '/path/to/file.txt';
@@ -296,9 +282,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($futureString, $actual['expiry']);
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testUpdateWithExpiryAddToPast($future, $past): void
     {
         $path = '/path/to/file.txt';
@@ -523,9 +507,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($testContent, $actual2New['contents']);
     }
 
-    /**
-     * @dataProvider dataRenameDirectory
-     */
+    #[DataProvider('dataRenameDirectory')]
     public function testRenameDirectory(bool $withDir): void
     {
         $oldDir = 'some/dir';
@@ -586,7 +568,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($testContent, $actual3Old['contents']);
     }
 
-    public function dataRenameDirectory(): array
+    public static function dataRenameDirectory(): array
     {
         return [
             'withDirectory' => [true],
@@ -594,9 +576,7 @@ class IntegrationTest extends IntegrationTestCase
         ];
     }
 
-    /**
-     * @dataProvider pathsDataProvider
-     */
+    #[DataProvider('pathsDataProvider')]
     public function testAddingPaths(array $paths, int $expectedRows): void
     {
         foreach ($paths as $path) {
@@ -609,9 +589,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertRowCount($expectedRows, 'flysystem_path');
     }
 
-    /**
-     * @dataProvider pathsDataProvider
-     */
+    #[DataProvider('pathsDataProvider')]
     public function testListContentsMeetsExpectedOutput(array $paths, int $expectedRows): void
     {
         foreach ($paths as $path) {
@@ -630,7 +608,7 @@ class IntegrationTest extends IntegrationTestCase
         static::assertCount($expectedRows, $this->adapter->listContents('/test', true));
     }
 
-    public function pathsDataProvider(): array
+    public static function pathsDataProvider(): array
     {
         $dir1 = [
             'type' => 'dir',

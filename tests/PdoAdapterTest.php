@@ -7,25 +7,17 @@ namespace Phlib\Flysystem\Pdo\Tests;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
 use Phlib\Flysystem\Pdo\PdoAdapter;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 class PdoAdapterTest extends TestCase
 {
-    /**
-     * @var PdoAdapter
-     */
-    protected $adapter;
+    private PdoAdapter $adapter;
 
-    /**
-     * @var \PDO|MockObject
-     */
-    protected $pdo;
+    private \PDO&MockObject $pdo;
 
-    /**
-     * @var Config|MockObject
-     */
-    protected $emptyConfig;
+    private Config $emptyConfig;
 
     protected function setUp(): void
     {
@@ -33,14 +25,6 @@ class PdoAdapterTest extends TestCase
         $this->emptyConfig = new Config();
         $this->pdo = $this->createMock(\PDO::class);
         $this->adapter = new PdoAdapter($this->pdo);
-    }
-
-    protected function tearDown(): void
-    {
-        $this->adapter = null;
-        $this->pdo = null;
-        $this->emptyConfig = null;
-        parent::tearDown();
     }
 
     public function testImplementsAdapterInterface(): void
@@ -118,7 +102,7 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $meta);
     }
 
-    public function dataExpiry(): array
+    public static function dataExpiry(): array
     {
         $future = new \DateTimeImmutable('+2 day');
         return [
@@ -133,9 +117,7 @@ class PdoAdapterTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testWriteWithExpiry($future, string $futureString): void
     {
         $this->setupBasicDbResponse();
@@ -346,9 +328,7 @@ class PdoAdapterTest extends TestCase
         static::assertSame(strlen($content), $meta['size']);
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testUpdateWithExpiry($future, string $futureString): void
     {
         $pathId = rand(1, 1000);
@@ -1087,8 +1067,8 @@ class PdoAdapterTest extends TestCase
 
     /**
      * @param mixed $expectValue
-     * @dataProvider individualAttributeGetMethodsDataProvider
      */
+    #[DataProvider('individualAttributeGetMethodsDataProvider')]
     public function testIndividualAttributeGetMethods(array $rowData, string $attribute, $expectValue): void
     {
         $method = 'get' . ucfirst($attribute);
@@ -1096,7 +1076,7 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expectValue, $this->adapter->{$method}($rowData['path'])[$attribute]);
     }
 
-    public function individualAttributeGetMethodsDataProvider(): array
+    public static function individualAttributeGetMethodsDataProvider(): array
     {
         $size = 1234;
         $mimetype = 'text/plain';
@@ -1128,25 +1108,28 @@ class PdoAdapterTest extends TestCase
             'path_id' => $pathId,
         ]];
 
-        $selectSql = static::stringContains('WHERE expiry <= :now');
         $expiredStmt = $this->createMock(\PDOStatement::class);
-
-        $deleteSql = static::logicalAnd(
-            static::stringContains('DELETE FROM '),
-            static::stringContains('WHERE path_id = :path_id'),
-        );
         $deleteStmt = $this->createMock(\PDOStatement::class);
 
         $this->pdo->expects(static::exactly(2))
             ->method('prepare')
-            ->withConsecutive(
-                [$selectSql],
-                [$deleteSql],
-            )
-            ->willReturnOnConsecutiveCalls(
-                $expiredStmt,
-                $deleteStmt,
-            );
+            ->with()
+            ->willReturnCallback(function (string $actualSql) use ($expiredStmt, $deleteStmt): \PDOStatement {
+                static $callCount = 0;
+                $callCount++;
+
+                switch ($callCount) {
+                    case 1:
+                        static::assertStringContainsString('WHERE expiry <= :now', $actualSql);
+                        return $expiredStmt;
+                    case 2:
+                        static::assertStringContainsString('DELETE FROM ', $actualSql);
+                        static::assertStringContainsString('WHERE path_id = :path_id', $actualSql);
+                        return $deleteStmt;
+                    default:
+                        static::fail('Method called more times than expected');
+                }
+            });
 
         $expiredStmt->expects(static::once())
             ->method('execute')
@@ -1173,9 +1156,7 @@ class PdoAdapterTest extends TestCase
         $this->adapter->deleteExpired();
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testDeleteExpiredSpecific($future, string $futureString): void
     {
         $expiry = $future;
