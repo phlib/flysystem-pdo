@@ -14,18 +14,16 @@ class PdoAdapter implements AdapterInterface
 
     private const TYPE_FILE = 'file';
 
-    protected \PDO $db;
-
     protected Config $config;
 
     protected string $pathTable;
 
     protected string $chunkTable;
 
-    public function __construct(\PDO $db, ?Config $config = null)
-    {
-        $this->db = $db;
-
+    public function __construct(
+        protected \PDO $db,
+        ?Config $config = null,
+    ) {
         $config ??= new Config();
         $defaultPrefix = 'flysystem';
         $config->setFallback(new Config([
