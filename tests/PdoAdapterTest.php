@@ -192,23 +192,7 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $meta);
     }
 
-    public static function dataExpiry(): array
-    {
-        $future = new \DateTimeImmutable('+2 day');
-        return [
-            'object' => [
-                $future,
-                $future->format('Y-m-d H:i:s'),
-            ],
-            'string' => [
-                $future->format('Y-m-d H:i:s'),
-                $future->format('Y-m-d H:i:s'),
-            ],
-        ];
-    }
-
-    #[DataProvider('dataExpiry')]
-    public function testWriteWithExpiry($future, string $futureString): void
+    public function testWriteWithExpiry(): void
     {
         $this->setupBasicDbResponse();
 
@@ -220,7 +204,8 @@ class PdoAdapterTest extends TestCase
 
         $path = '/some/path/to/file.txt';
         $content = 'Test Content';
-        $expiry = $future;
+        $expiry = new \DateTimeImmutable('+2 day');
+        $expiryString = $expiry->format('Y-m-d H:i:s');
         $config = new Config([
             'expiry' => $expiry,
         ]);
@@ -236,8 +221,11 @@ class PdoAdapterTest extends TestCase
             'mimetype' => 'text/plain',
             'size' => strlen($content),
             'visibility' => 'public',
-            'expiry' => $futureString,
+            'expiry' => $expiryString,
         ];
+
+        // Change DT object to a string, for comparison
+        $actual['expiry'] = $actual['expiry']->format('Y-m-d H:i:s');
         static::assertSame($expected, $actual);
     }
 
@@ -402,14 +390,14 @@ class PdoAdapterTest extends TestCase
         static::assertSame(strlen($content), $meta['size']);
     }
 
-    #[DataProvider('dataExpiry')]
-    public function testUpdateWithExpiry($future, string $futureString): void
+    public function testUpdateWithExpiry(): void
     {
         $pathId = rand(1, 1000);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test Content';
-        $expiry = $future;
+        $expiry = new \DateTimeImmutable('+2 day');
+        $expiryString = $expiry->format('Y-m-d H:i:s');
         $config = new Config([
             'expiry' => $expiry,
         ]);
@@ -439,8 +427,11 @@ class PdoAdapterTest extends TestCase
             'mimetype' => 'text/plain',
             'size' => strlen($content),
             'visibility' => 'public',
-            'expiry' => $futureString,
+            'expiry' => $expiryString,
         ];
+
+        // Change DT object to a string, for comparison
+        $actual['expiry'] = $actual['expiry']->format('Y-m-d H:i:s');
         static::assertSame($expected, $actual);
     }
 
@@ -882,6 +873,8 @@ class PdoAdapterTest extends TestCase
         ];
 
         $actual = $this->adapter->read($path);
+        // Change DT object to a string, for comparison
+        $actual['expiry'] = $actual['expiry']->format('Y-m-d H:i:s');
         static::assertSame($expected, $actual);
     }
 
@@ -1147,10 +1140,10 @@ class PdoAdapterTest extends TestCase
         $this->adapter->deleteExpired();
     }
 
-    #[DataProvider('dataExpiry')]
-    public function testDeleteExpiredSpecific($future, string $futureString): void
+    public function testDeleteExpiredSpecific(): void
     {
-        $expiry = $future;
+        $expiry = new \DateTimeImmutable('+2 day');
+        $expiryString = $expiry->format('Y-m-d H:i:s');
 
         $selectSql = static::stringContains('WHERE expiry <= :now');
         $expiredStmt = $this->createMock(\PDOStatement::class);
@@ -1163,7 +1156,7 @@ class PdoAdapterTest extends TestCase
         $expiredStmt->expects(static::once())
             ->method('execute')
             ->with([
-                'now' => $futureString,
+                'now' => $expiryString,
             ])
             ->willReturn(true);
 

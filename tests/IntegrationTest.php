@@ -105,29 +105,10 @@ class IntegrationTest extends IntegrationTestCase
         ];
     }
 
-    public static function dataExpiry(): array
-    {
-        $future = new \DateTimeImmutable('+2 day');
-        $past = new \DateTimeImmutable('-2 day');
-        return [
-            'object' => [
-                $future,
-                $past,
-                $future->format('Y-m-d H:i:s'),
-            ],
-            'string' => [
-                $future->format('Y-m-d H:i:s'),
-                $past->format('Y-m-d H:i:s'),
-                $future->format('Y-m-d H:i:s'),
-            ],
-        ];
-    }
-
-    #[DataProvider('dataExpiry')]
-    public function testWrittenAndReadWithExpiryFuture($future, $past, string $futureString): void
+    public function testWrittenAndReadWithExpiryFuture(): void
     {
         $path = '/path/to/file.txt';
-        $expiry = $future;
+        $expiry = new \DateTimeImmutable('+2 day');
         $config = new Config([
             'expiry' => $expiry,
         ]);
@@ -137,14 +118,13 @@ class IntegrationTest extends IntegrationTestCase
         $this->adapter->write($path, $content, $config);
         $actual = $this->adapter->read($path);
 
-        static::assertSame($futureString, $actual['expiry']);
+        static::assertSame($expiry->format('Y-m-d H:i:s'), $actual['expiry']->format('Y-m-d H:i:s'));
     }
 
-    #[DataProvider('dataExpiry')]
-    public function testWrittenAndReadWithExpiryPast($future, $past): void
+    public function testWrittenAndReadWithExpiryPast(): void
     {
         $path = '/path/to/file.txt';
-        $expiry = $past;
+        $expiry = new \DateTimeImmutable('-2 day');
         $config = new Config([
             'expiry' => $expiry,
         ]);
@@ -222,11 +202,10 @@ class IntegrationTest extends IntegrationTestCase
         ];
     }
 
-    #[DataProvider('dataExpiry')]
-    public function testUpdateWhenExpiryFuture($future, $past, string $futureString): void
+    public function testUpdateWhenExpiryFuture(): void
     {
         $path = '/path/to/file.txt';
-        $expiry = $future;
+        $expiry = new \DateTimeImmutable('+2 day');
         $config = new Config([
             'expiry' => $expiry,
         ]);
@@ -240,14 +219,13 @@ class IntegrationTest extends IntegrationTestCase
 
         $actual = $this->adapter->read($path);
 
-        static::assertSame($futureString, $actual['expiry']);
+        static::assertSame($expiry->format('Y-m-d H:i:s'), $actual['expiry']->format('Y-m-d H:i:s'));
     }
 
-    #[DataProvider('dataExpiry')]
-    public function testUpdateWhenExpiryPast($future, $past): void
+    public function testUpdateWhenExpiryPast(): void
     {
         $path = '/path/to/file.txt';
-        $expiry = $past;
+        $expiry = new \DateTimeImmutable('-2 day');
         $config = new Config([
             'expiry' => $expiry,
         ]);
@@ -262,15 +240,14 @@ class IntegrationTest extends IntegrationTestCase
         static::assertFalse($actual);
     }
 
-    #[DataProvider('dataExpiry')]
-    public function testUpdateWithExpiryAddToFuture($future, $past, string $futureString): void
+    public function testUpdateWithExpiryAddToFuture(): void
     {
         $path = '/path/to/file.txt';
         $content = sha1(uniqid('Test content'));
 
         $this->adapter->write($path, $content, $this->emptyConfig);
 
-        $expiry = $future;
+        $expiry = new \DateTimeImmutable('+2 day');
         $config = new Config([
             'expiry' => $expiry,
         ]);
@@ -279,18 +256,17 @@ class IntegrationTest extends IntegrationTestCase
 
         $actual = $this->adapter->read($path);
 
-        static::assertSame($futureString, $actual['expiry']);
+        static::assertSame($expiry->format('Y-m-d H:i:s'), $actual['expiry']->format('Y-m-d H:i:s'));
     }
 
-    #[DataProvider('dataExpiry')]
-    public function testUpdateWithExpiryAddToPast($future, $past): void
+    public function testUpdateWithExpiryAddToPast(): void
     {
         $path = '/path/to/file.txt';
         $content = sha1(uniqid('Test content'));
 
         $this->adapter->write($path, $content, $this->emptyConfig);
 
-        $expiry = $past;
+        $expiry = new \DateTimeImmutable('-2 day');
         $config = new Config([
             'expiry' => $expiry,
         ]);
@@ -321,7 +297,7 @@ class IntegrationTest extends IntegrationTestCase
 
         $actual = $this->adapter->read($path);
 
-        static::assertSame($expiry2->format('Y-m-d H:i:s'), $actual['expiry']);
+        static::assertSame($expiry2->format('Y-m-d H:i:s'), $actual['expiry']->format('Y-m-d H:i:s'));
     }
 
     public function testUpdateWithExpiryChangeToPast(): void

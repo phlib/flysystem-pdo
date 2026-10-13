@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   Database errors are thrown as `\PDOException`, rather than returning `false`.
 - **BC break**: The `PdoAdapter` constructor no longer accepts `null` for the
   config; omit the argument to use the default configuration.
+- **BC break**: Expiry date is always set & retrieved using \DateTimeImmutable.
+- **BC break**: `deleteExpired()` no longer accepts `null`; omit the argument to
+  use the current time.
 ### Fixed
 - Temporary files are removed when writing or updating a file fails, or when
   updating a file that does not exist.
