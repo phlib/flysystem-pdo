@@ -26,9 +26,7 @@ class PdoAdapter implements AdapterInterface
     {
         $this->db = $db;
 
-        if ($config === null) {
-            $config = new Config();
-        }
+        $config ??= new Config();
         $defaultPrefix = 'flysystem';
         $config->setFallback(new Config([
             'table_prefix' => $defaultPrefix,

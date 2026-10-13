@@ -462,8 +462,7 @@ class IntegrationTest extends IntegrationTestCase
         $sql = "SELECT is_compressed FROM flysystem_path WHERE path_id = {$meta['path_id']}";
         $actual = static::getTestDbAdapter()->query($sql)->fetchColumn();
 
-        // @todo ^php81: Native types in php81 mean that `$actual` will already be an int
-        static::assertSame(1, (int)$actual);
+        static::assertSame(1, $actual);
     }
 
     public function testCopyingPathMakesAccurateCopy(): void
