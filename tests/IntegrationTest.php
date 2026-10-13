@@ -67,7 +67,7 @@ class IntegrationTest extends IntegrationTestCase
         callable $fileCallback,
         string $writeMethod,
         string $readMethod,
-        Config $config
+        Config $config,
     ): void {
         $filename = static::$tempFiles['10K'];
         $file = call_user_func($fileCallback, $filename);
@@ -189,7 +189,7 @@ class IntegrationTest extends IntegrationTestCase
         callable $fileCallback,
         string $updateMethod,
         string $readMethod,
-        Config $config
+        Config $config,
     ): void {
         $path = '/path/to/file.txt';
         $this->adapter->write($path, file_get_contents(static::$tempFiles['10B']), $this->emptyConfig);

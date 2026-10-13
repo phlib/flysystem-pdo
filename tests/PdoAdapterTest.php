@@ -99,7 +99,7 @@ class PdoAdapterTest extends TestCase
 
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -144,7 +144,7 @@ class PdoAdapterTest extends TestCase
 
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -177,7 +177,7 @@ class PdoAdapterTest extends TestCase
 
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -218,13 +218,13 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $meta = $this->adapter
             ->write(
                 '/example.json',
                 '',
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertSame('application/json', $meta['mimetype']);
@@ -235,13 +235,13 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $meta = $this->adapter
             ->write(
                 '/missing-extension',
                 base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertSame('image/gif', $meta['mimetype']);
@@ -254,7 +254,7 @@ class PdoAdapterTest extends TestCase
         $pathId = rand(1, 1000);
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test File';
@@ -287,14 +287,14 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $handle = $this->createTempResource();
         $meta = $this->adapter
             ->writeStream(
                 '/example.json',
                 $handle,
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertSame('application/json', $meta['mimetype']);
@@ -309,7 +309,7 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
         $handle = $this->createTempResource($content);
@@ -317,7 +317,7 @@ class PdoAdapterTest extends TestCase
             ->writeStream(
                 '/missing-extension',
                 $handle,
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertNotEquals('image/gif', $meta['mimetype']);
@@ -483,7 +483,7 @@ class PdoAdapterTest extends TestCase
             ->update(
                 $path,
                 base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertSame('image/gif', $meta['mimetype']);
@@ -640,7 +640,7 @@ class PdoAdapterTest extends TestCase
         ]);
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $actual = $this->adapter->copy($path, $newpath);
         static::assertTrue($actual);
@@ -746,7 +746,7 @@ class PdoAdapterTest extends TestCase
         $pathId = 12345;
         $this->setupBasicDbResponse();
         $this->pdo->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $meta = $this->adapter->createDir('/path', $this->emptyConfig);
         static::assertSame($pathId, $meta['path_id']);
@@ -757,7 +757,7 @@ class PdoAdapterTest extends TestCase
         $pathId = 12345;
         $this->setupBasicDbResponse();
         $this->pdo->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $additional = [
             uniqid('key1') => sha1(uniqid('value1')),
@@ -974,7 +974,7 @@ class PdoAdapterTest extends TestCase
                     'update_ts' => date('Y-m-d H:i:s'),
                 ],
             ],
-            'fetchAll'
+            'fetchAll',
         );
         $listing = $this->adapter->listContents('/path');
         static::assertCount(1, $listing);

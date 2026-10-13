@@ -22,7 +22,7 @@ class PdoAdapter implements AdapterInterface
 
     protected string $chunkTable;
 
-    public function __construct(\PDO $db, Config $config = null)
+    public function __construct(\PDO $db, ?Config $config = null)
     {
         $this->db = $db;
 
@@ -81,14 +81,14 @@ class PdoAdapter implements AdapterInterface
      */
     protected function doWrite(string $path, string $filename, string $contents, $resource, Config $config)
     {
-        $enableCompression = (bool)$config->get('enable_compression', $this->config->get('enable_compression'));
+        $enableCompression = (bool) $config->get('enable_compression', $this->config->get('enable_compression'));
         $data = [
             'path' => $path,
             'type' => self::TYPE_FILE,
             'mimetype' => Util::guessMimeType($path, $contents),
             'visibility' => $config->get('visibility', AdapterInterface::VISIBILITY_PUBLIC),
             'size' => filesize($filename),
-            'is_compressed' => (int)$enableCompression,
+            'is_compressed' => (int) $enableCompression,
         ];
         $expiry = null;
         if ($config->has('expiry')) {
@@ -96,7 +96,7 @@ class PdoAdapter implements AdapterInterface
             if (!($expiry instanceof \DateTimeImmutable)) {
                 trigger_error(
                     'phlib/flysystem-pdo: Setting expiry datetime as string is deprecated; use \DateTimeImmutable.',
-                    E_USER_DEPRECATED
+                    E_USER_DEPRECATED,
                 );
                 $expiry = new \DateTimeImmutable($expiry);
             }
@@ -116,7 +116,7 @@ class PdoAdapter implements AdapterInterface
             $data['size'],
             $enableCompression,
             $expiry,
-            $meta
+            $meta,
         );
         if ($data['path_id'] === false) {
             $this->cleanupTemp($resource, $filename);
@@ -175,7 +175,7 @@ class PdoAdapter implements AdapterInterface
             if (!($expiry instanceof \DateTimeImmutable)) {
                 trigger_error(
                     'phlib/flysystem-pdo: Setting expiry datetime as string is deprecated; use \DateTimeImmutable.',
-                    E_USER_DEPRECATED
+                    E_USER_DEPRECATED,
                 );
                 $expiry = new \DateTimeImmutable($expiry);
             }
@@ -202,7 +202,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $this->deleteChunks($data['path_id']);
-        $this->insertChunks($data['path_id'], $resource, (bool)$data['is_compressed']);
+        $this->insertChunks($data['path_id'], $resource, (bool) $data['is_compressed']);
         $this->cleanupTemp($resource, $filename);
 
         $data['update_ts'] = date('Y-m-d H:i:s');
@@ -271,15 +271,15 @@ class PdoAdapter implements AdapterInterface
             $newData['path'],
             $data['visibility'],
             $data['mimetype'],
-            (int)$data['size'],
-            (bool)$data['is_compressed'],
+            (int) $data['size'],
+            (bool) $data['is_compressed'],
             $data['expiry'] ?? null,
-            $data['meta'] ?? null
+            $data['meta'] ?? null,
         );
 
         if ($newData['type'] === self::TYPE_FILE) {
-            $resource = $this->getChunkResource($data['path_id'], (bool)$data['is_compressed']);
-            $this->insertChunks($newData['path_id'], $resource, (bool)$data['is_compressed']);
+            $resource = $this->getChunkResource($data['path_id'], (bool) $data['is_compressed']);
+            $this->insertChunks($newData['path_id'], $resource, (bool) $data['is_compressed']);
             $this->cleanupTemp($resource, '');
         }
 
@@ -396,7 +396,7 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        return (bool)$stmt->fetchColumn();
+        return (bool) $stmt->fetchColumn();
     }
 
     /**
@@ -413,7 +413,7 @@ class PdoAdapter implements AdapterInterface
         $metadata = $this->normalizeMetadata($data);
 
         if ($data['type'] === self::TYPE_FILE) {
-            $resource = $this->getChunkResource($data['path_id'], (bool)$data['is_compressed']);
+            $resource = $this->getChunkResource($data['path_id'], (bool) $data['is_compressed']);
             $metadata['contents'] = stream_get_contents($resource);
             fclose($resource);
         }
@@ -433,7 +433,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $metadata = $this->normalizeMetadata($data);
-        $metadata['stream'] = $this->getChunkResource($metadata['path_id'], (bool)$data['is_compressed']);
+        $metadata['stream'] = $this->getChunkResource($metadata['path_id'], (bool) $data['is_compressed']);
         return $metadata;
     }
 
@@ -572,7 +572,7 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        $data['path_id'] = (int)$data['path_id'];
+        $data['path_id'] = (int) $data['path_id'];
 
         return $data;
     }
@@ -588,7 +588,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $meta = [
-            'path_id' => (int)$data['path_id'],
+            'path_id' => (int) $data['path_id'],
             'type' => $data['type'],
             'path' => $data['path'],
             'timestamp' => strtotime($data['update_ts']),
@@ -598,7 +598,7 @@ class PdoAdapter implements AdapterInterface
         }
         if ($data['type'] === self::TYPE_FILE) {
             $meta['mimetype'] = $data['mimetype'];
-            $meta['size'] = (int)$data['size'];
+            $meta['size'] = (int) $data['size'];
             $meta['visibility'] = $data['visibility'];
             if (isset($data['expiry'])) {
                 $meta['expiry'] = $data['expiry'];
@@ -614,10 +614,10 @@ class PdoAdapter implements AdapterInterface
 
     protected function hasExpired(array $data): bool
     {
-        if (isset($data['expiry']) &&
-            !empty($data['expiry']) &&
-            strtotime($data['expiry']) !== false &&
-            strtotime($data['expiry']) <= time()
+        if (isset($data['expiry'])
+            && !empty($data['expiry'])
+            && strtotime($data['expiry']) !== false
+            && strtotime($data['expiry']) <= time()
         ) {
             return true;
         }
@@ -647,12 +647,12 @@ class PdoAdapter implements AdapterInterface
     protected function insertPath(
         string $type,
         string $path,
-        string $visibility = null,
-        string $mimeType = null,
-        int $size = null,
+        ?string $visibility = null,
+        ?string $mimeType = null,
+        ?int $size = null,
         bool $enableCompression = true,
-        \DateTimeImmutable $expiry = null,
-        array $additional = null
+        ?\DateTimeImmutable $expiry = null,
+        ?array $additional = null,
     ) {
         $data = [
             'type' => $type === self::TYPE_DIRECTORY ? self::TYPE_DIRECTORY : self::TYPE_FILE,
@@ -660,7 +660,7 @@ class PdoAdapter implements AdapterInterface
             'visibility' => $visibility,
             'mimetype' => $mimeType,
             'size' => $size,
-            'is_compressed' => (int)$enableCompression,
+            'is_compressed' => (int) $enableCompression,
         ];
         if ($expiry !== null) {
             $data['expiry'] = $expiry->format('Y-m-d H:i:s');
@@ -681,7 +681,7 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        return (int)$this->db->lastInsertId();
+        return (int) $this->db->lastInsertId();
     }
 
     /**
@@ -697,7 +697,7 @@ class PdoAdapter implements AdapterInterface
         } else {
             trigger_error(
                 'phlib/flysystem-pdo: Setting expiry datetime as string is deprecated; use \DateTimeImmutable.',
-                E_USER_DEPRECATED
+                E_USER_DEPRECATED,
             );
         }
 
@@ -709,7 +709,7 @@ class PdoAdapter implements AdapterInterface
 
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         foreach ($rows as $row) {
-            $this->deletePath((int)$row['path_id']);
+            $this->deletePath((int) $row['path_id']);
         }
 
         return $stmt->rowCount();
@@ -783,7 +783,7 @@ class PdoAdapter implements AdapterInterface
     {
         $resource = fopen($filename, 'w+b');
         if (!is_resource($content)) {
-            fwrite($resource, (string)$content);
+            fwrite($resource, (string) $content);
         } else {
             while (!feof($content)) {
                 fwrite($resource, stream_get_contents($content, 1024), 1024);
