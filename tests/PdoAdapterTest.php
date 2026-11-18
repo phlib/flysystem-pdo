@@ -236,6 +236,10 @@ class PdoAdapterTest extends TestCase
                 fn(PdoAdapter $adapter) => $adapter->extra(self::PATH),
                 UnableToRetrieveMetadata::class,
             ],
+            'setVisibility' => [
+                fn(PdoAdapter $adapter) => $adapter->setVisibility(self::PATH, Visibility::PRIVATE),
+                UnableToSetVisibility::class,
+            ],
             'delete' => [
                 fn(PdoAdapter $adapter) => $adapter->delete(self::PATH),
                 null,
@@ -485,7 +489,7 @@ class PdoAdapterTest extends TestCase
         return [
             'by extension' => ['/path/to/file.json', '', 'application/json'],
             'by content' => ['/path/to/file', $gif, 'image/gif'],
-            'unknown' => ['/path/to/file.unknown', '', 'text/plain'],
+            'unknown' => ['/path/to/file.unknown', '', null],
         ];
     }
 
@@ -550,11 +554,13 @@ class PdoAdapterTest extends TestCase
         $this->givenRawFile();
 
         $this->adapter->write(self::PATH, 'New Content', new Config([
+            'visibility' => Visibility::PRIVATE,
             'expiry' => $expiry,
             'meta' => $meta,
         ]));
 
         $params = $this->executedOnce(self::SQL_UPDATE_PATH)['params'];
+        static::assertSame(Visibility::PRIVATE, $params['visibility']);
         static::assertSame($expiry->format('Y-m-d H:i:s'), $params['expiry']);
         static::assertSame(json_encode($meta), $params['meta']);
     }
@@ -705,11 +711,17 @@ class PdoAdapterTest extends TestCase
     public function testCopy(): void
     {
         $content = 'Test Content';
+        $expiry = (new \DateTimeImmutable('+2 days'))->format('Y-m-d H:i:s');
+        $meta = json_encode([
+            'owner' => 'example',
+        ]);
         $this->givenFile([
             'visibility' => Visibility::PRIVATE,
             'mimetype' => 'text/csv',
             'size' => strlen($content),
             'is_compressed' => 1,
+            'expiry' => $expiry,
+            'meta' => $meta,
         ]);
         $this->respond(self::SQL_READ_CHUNKS, [[
             'content' => gzdeflate($content),
@@ -724,6 +736,8 @@ class PdoAdapterTest extends TestCase
             'mimetype' => 'text/csv',
             'size' => strlen($content),
             'is_compressed' => 1,
+            'expiry' => $expiry,
+            'meta' => $meta,
         ], $this->executedOnce(self::SQL_INSERT_PATH)['params']);
         static::assertSame($content, gzinflate($this->writtenContent(self::INSERT_ID + 1)));
         $this->assertNotExecuted(self::SQL_DELETE_PATH);
@@ -732,6 +746,7 @@ class PdoAdapterTest extends TestCase
     public static function dataCopyReplacesDestination(): array
     {
         return [
+            'live file' => ['file', 0],
             'expired file' => ['file', 1],
             'expired directory' => ['dir', 1],
         ];
@@ -752,6 +767,34 @@ class PdoAdapterTest extends TestCase
         static::assertSame('/destination.txt', $this->executedOnce(self::SQL_RAW_LOOKUP)['params']['path']);
         $this->assertDeleted(456);
         $this->assertExecutedBefore(self::SQL_DELETE_PATH, self::SQL_INSERT_PATH);
+    }
+
+    public function testCopyToDirectory(): void
+    {
+        $this->givenFile();
+        $this->givenRawFile([
+            'path_id' => 456,
+            'type' => 'dir',
+        ]);
+
+        try {
+            $this->adapter->copy(self::PATH, '/destination', new Config());
+            static::fail('Expected exception to be thrown');
+        } catch (UnableToCopyFile) {
+        }
+
+        $this->assertNotExecuted(self::SQL_DELETE_PATH);
+        $this->assertNotExecuted(self::SQL_INSERT_PATH);
+    }
+
+    public function testCopyDirectory(): void
+    {
+        $this->givenFile([
+            'type' => 'dir',
+        ]);
+
+        $this->expectException(UnableToCopyFile::class);
+        $this->adapter->copy(self::PATH, '/destination', new Config());
     }
 
     public function testDelete(): void
@@ -786,39 +829,38 @@ class PdoAdapterTest extends TestCase
     #[DataProvider('dataDeleteDirectory')]
     public function testDeleteDirectory(string $path): void
     {
-        // Registered before the directory entry, as the lookup has the same start
-        $this->respond('WHERE path = :path OR', [
-            $this->row('/path/to', [
-                'path_id' => 123,
-                'type' => 'dir',
-            ]),
-            $this->row('/path/to/file.txt', [
-                'path_id' => 456,
-            ]),
-        ]);
-        $this->givenFile([
-            'path' => '/path/to',
-            'type' => 'dir',
-        ]);
-
         $this->adapter->deleteDirectory($path);
 
-        // The directory and all descendants are found, including any which are expired
-        $select = $this->executedOnce('WHERE path = :path OR');
-        static::assertStringContainsString('(path >= :descendant_from AND path < :descendant_to)', $select['sql']);
-        static::assertStringNotContainsString('expiry', $select['sql']);
-        static::assertParams([
+        // All descendants and their chunks are deleted, including any which are expired, without reading the rows.
+        // The directory entry is deleted, but not a file at the same path.
+        $expectedParams = [
             'path' => '/path/to',
+            'type' => 'dir',
             'descendant_from' => '/path/to/',
             'descendant_to' => '/path/to0',
-        ], $select['params']);
+        ];
+        foreach ([self::SQL_DELETE_CHUNKS, self::SQL_DELETE_PATH] as $delete) {
+            $execution = $this->executedOnce($delete);
+            static::assertStringContainsString('(path = :path AND type = :type)', $execution['sql']);
+            static::assertStringContainsString(
+                '(path >= :descendant_from AND path < :descendant_to)',
+                $execution['sql'],
+            );
+            static::assertStringNotContainsString('expiry', $execution['sql']);
+            static::assertParams($expectedParams, $execution['params']);
+        }
+        static::assertCount(2, $this->executed);
+    }
 
-        // Each is deleted, along with the chunks for files
-        $this->assertDeleted(456);
-        static::assertCount(1, array_filter(
-            $this->executed(self::SQL_DELETE_PATH),
-            fn(array $execution): bool => $execution['params']['path_id'] === 123,
-        ));
+    public function testDeleteRootDirectory(): void
+    {
+        try {
+            $this->adapter->deleteDirectory('/');
+            static::fail('Expected exception to be thrown');
+        } catch (UnableToDeleteDirectory) {
+        }
+
+        static::assertEmpty($this->executed);
     }
 
     public function testCreateDirectory(): void
@@ -877,12 +919,27 @@ class PdoAdapterTest extends TestCase
 
     public function testSetVisibility(): void
     {
+        $this->givenFile();
+
         $this->adapter->setVisibility(self::PATH, Visibility::PRIVATE);
 
+        $update = $this->executedOnce(self::SQL_UPDATE_PATH);
+        static::assertStringContainsString('WHERE path_id = :path_id', $update['sql']);
         static::assertParams([
             'visibility' => Visibility::PRIVATE,
-            'path' => self::PATH,
-        ], $this->executedOnce(self::SQL_UPDATE_PATH)['params']);
+            'path_id' => 123,
+        ], $update['params']);
+    }
+
+    public function testSetVisibilityWithDbFailure(): void
+    {
+        $this->givenFile();
+        $this->respond(self::SQL_UPDATE_PATH, fail: true);
+
+        $this->assertDbFailure(
+            UnableToSetVisibility::class,
+            fn() => $this->adapter->setVisibility(self::PATH, Visibility::PRIVATE),
+        );
     }
 
     public function testMetadata(): void
@@ -921,6 +978,16 @@ class PdoAdapterTest extends TestCase
             strtotime('2026-01-02 03:04:05 +00:00'),
             $this->adapter->lastModified(self::PATH)->lastModified(),
         );
+    }
+
+    public function testMimeTypeUnknown(): void
+    {
+        $this->givenFile([
+            'mimetype' => null,
+        ]);
+
+        $this->expectException(UnableToRetrieveMetadata::class);
+        $this->adapter->mimeType(self::PATH);
     }
 
     public function testMetadataForDirectory(): void

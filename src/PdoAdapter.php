@@ -112,7 +112,8 @@ class PdoAdapter implements FilesystemAdapter
             throw UnableToWriteFile::atLocation($path, 'Path already exists as a directory');
         }
 
-        $mimeType = $this->mimeTypeDetector->detectMimeType($path, $contents) ?? 'text/plain';
+        // Null when the type cannot be detected; mimeType() then throws, as required by the Flysystem interface
+        $mimeType = $this->mimeTypeDetector->detectMimeType($path, $contents);
         $tempFilename = $this->getTempFilename();
         $tempResource = $this->getTempResource($tempFilename, $contents);
         $fileSize = filesize($tempFilename);
@@ -168,7 +169,7 @@ class PdoAdapter implements FilesystemAdapter
         $contents,
         Config $config,
         bool $isCompressed,
-        string $mimeType,
+        ?string $mimeType,
         int $fileSize,
     ): void {
         $data = [
@@ -176,6 +177,9 @@ class PdoAdapter implements FilesystemAdapter
             'size' => $fileSize,
         ];
 
+        if ($config->get('visibility')) {
+            $data['visibility'] = $config->get('visibility');
+        }
         if ($config->get('expiry')) {
             $data['expiry'] = $config->get('expiry')->format('Y-m-d H:i:s');
         }
@@ -234,30 +238,42 @@ class PdoAdapter implements FilesystemAdapter
     {
         try {
             $data = $this->findPathData($source);
-            if (!is_array($data)) {
+            if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_FILE) {
                 throw UnableToCopyFile::fromLocationTo($source, $destination);
             }
 
-            $newData = $data;
-            $newData['path'] = $destination;
-            unset($newData['path_id']);
-            unset($newData['update_ts']);
+            $existing = $this->findRawPathData($destination);
+            if ($existing && !$existing['is_expired'] && $existing['type'] !== StorageAttributes::TYPE_FILE) {
+                throw UnableToCopyFile::fromLocationTo(
+                    $source,
+                    $destination,
+                    UnableToWriteFile::atLocation($destination, 'Path already exists as a directory'),
+                );
+            }
 
-            $this->deleteExpiredPath($destination);
-            $newData['path_id'] = $this->insertPath(
-                $data['type'],
-                $newData['path'],
-                $data['visibility'],
-                $data['mimetype'],
-                (int) $data['size'],
-                (bool) $data['is_compressed'],
-                $data['expiry'] ?? null,
-                $data['meta'] ?? null,
-            );
+            $isCompressed = (bool) $data['is_compressed'];
+            $resource = $this->getChunkResource((int) $data['path_id'], $isCompressed);
+            try {
+                // Replace the existing destination file, whether expired or not, as the path must be unique.
+                // The source has already been read, to minimise the time the destination file is missing.
+                if ($existing) {
+                    $this->deletePath((int) $existing['path_id']);
+                    $this->deleteChunks((int) $existing['path_id']);
+                }
 
-            if ($newData['type'] === StorageAttributes::TYPE_FILE) {
-                $resource = $this->getChunkResource($data['path_id'], (bool) $data['is_compressed']);
-                $this->insertChunks($newData['path_id'], $resource, (bool) $data['is_compressed']);
+                $pathId = $this->insertPath(
+                    StorageAttributes::TYPE_FILE,
+                    $destination,
+                    $data['visibility'],
+                    $data['mimetype'],
+                    (int) $data['size'],
+                    $isCompressed,
+                    isset($data['expiry']) ? new \DateTimeImmutable($data['expiry']) : null,
+                    isset($data['meta']) ? json_decode($data['meta'], true) : null,
+                );
+
+                $this->insertChunks($pathId, $resource, $isCompressed);
+            } finally {
                 $this->cleanupTemp($resource, '');
             }
         } catch (\PDOException $e) {
@@ -283,30 +299,25 @@ class PdoAdapter implements FilesystemAdapter
     public function deleteDirectory(string $path): void
     {
         try {
-            $data = $this->findPathData($path);
-            if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_DIRECTORY) {
-                return;
+            $path = rtrim($path, '/');
+            if ($path === '') {
+                throw UnableToDeleteDirectory::atLocation($path, 'Cannot delete the root directory');
             }
 
-            $select = "SELECT * FROM {$this->pathTable}";
-
-            $path = rtrim($path, '/');
-            $select .= " WHERE path = :path OR {$this->descendantCondition()}";
+            // The directory may only be implied by the paths of its descendants, so there may not be a matching entry.
+            // All descendants are deleted, including any which have expired.
+            $where = "(path = :path AND type = :type) OR {$this->descendantCondition()}";
             $params = [
                 'path' => $path,
+                'type' => StorageAttributes::TYPE_DIRECTORY,
                 ...$this->getDescendantConditionBindParams($path),
             ];
 
-            $stmt = $this->db->prepare($select);
-            $stmt->execute($params);
-
-            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-
-            foreach ($rows as $row) {
-                $this->deletePath((int) $row['path_id']);
-                if ($row['type'] === StorageAttributes::TYPE_FILE) {
-                    $this->deleteChunks((int) $row['path_id']);
-                }
+            $deleteChunks = "DELETE FROM {$this->chunkTable}"
+                . " WHERE path_id IN (SELECT path_id FROM {$this->pathTable} WHERE {$where})";
+            $deletePaths = "DELETE FROM {$this->pathTable} WHERE {$where}";
+            foreach ([$deleteChunks, $deletePaths] as $delete) {
+                $this->db->prepare($delete)->execute($params);
             }
         } catch (\PDOException $e) {
             throw UnableToDeleteDirectory::atLocation($path, $e->getMessage(), $e);
@@ -343,13 +354,17 @@ class PdoAdapter implements FilesystemAdapter
     public function setVisibility(string $path, string $visibility): void
     {
         try {
-            $update = "UPDATE {$this->pathTable} SET visibility = :visibility WHERE path = :path";
-            $data = [
-                'visibility' => $visibility,
-                'path' => $path,
-            ];
+            $data = $this->findPathData($path);
+            if (!$data) {
+                throw UnableToSetVisibility::atLocation($path, 'Path does not exist');
+            }
+
+            $update = "UPDATE {$this->pathTable} SET visibility = :visibility WHERE path_id = :path_id";
             $stmt = $this->db->prepare($update);
-            $stmt->execute($data);
+            $stmt->execute([
+                'visibility' => $visibility,
+                'path_id' => $data['path_id'],
+            ]);
         } catch (\PDOException $e) {
             throw UnableToSetVisibility::atLocation($path, $e->getMessage(), $e);
         }
@@ -548,7 +563,12 @@ class PdoAdapter implements FilesystemAdapter
 
     public function mimeType(string $path): FileAttributes
     {
-        return $this->getFileMetadataValue($path, 'mimetype');
+        $attributes = $this->getFileMetadataValue($path, 'mimetype');
+        if ($attributes->mimeType() === null) {
+            throw UnableToRetrieveMetadata::mimeType($path, 'Unknown mimetype');
+        }
+
+        return $attributes;
     }
 
     public function lastModified(string $path): FileAttributes

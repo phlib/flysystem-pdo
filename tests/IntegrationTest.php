@@ -9,9 +9,11 @@ use League\Flysystem\DirectoryAttributes;
 use League\Flysystem\StorageAttributes;
 use League\Flysystem\UnableToCopyFile;
 use League\Flysystem\UnableToCreateDirectory;
+use League\Flysystem\UnableToDeleteDirectory;
 use League\Flysystem\UnableToMoveFile;
 use League\Flysystem\UnableToReadFile;
 use League\Flysystem\UnableToRetrieveMetadata;
+use League\Flysystem\UnableToSetVisibility;
 use League\Flysystem\Visibility;
 use Phlib\Flysystem\Pdo\PdoAdapter;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -855,6 +857,40 @@ class IntegrationTest extends IntegrationTestCase
         $this->adapter->createDirectory('/test', $this->emptyConfig);
     }
 
+    public function testDeletingImpliedDirectory(): void
+    {
+        $this->adapter->write('/test/file.txt', 'content', $this->emptyConfig);
+        $this->adapter->write('/test/deeper/file.txt', 'content', $this->emptyConfig);
+        $this->writeExpiredFile('/test/expired.txt', 'content');
+        $this->adapter->write('/test-sibling.txt', 'content', $this->emptyConfig);
+        $this->adapter->write('/tests/file.txt', 'content', $this->emptyConfig);
+
+        $this->adapter->deleteDirectory('/test');
+
+        // Only the siblings remain, and the expired file has also been deleted
+        static::assertSame([
+            '/test-sibling.txt' => 'file',
+            '/tests' => 'dir',
+        ], $this->listPathTypes(''));
+        static::assertRowCount(2, 'flysystem_path');
+        static::assertRowCount(2, 'flysystem_chunk');
+    }
+
+    public function testDeletingDirectoryDoesNotDeleteFileAtPath(): void
+    {
+        $this->adapter->write('/test', 'content', $this->emptyConfig);
+
+        $this->adapter->deleteDirectory('/test');
+
+        static::assertTrue($this->adapter->fileExists('/test'));
+    }
+
+    public function testDeletingRootDirectoryIsNotAllowed(): void
+    {
+        $this->expectException(UnableToDeleteDirectory::class);
+        $this->adapter->deleteDirectory('');
+    }
+
     public function testDeletingDirectoryClearsAllFiles(): void
     {
         $this->adapter->createDirectory('/test', $this->emptyConfig);
@@ -984,6 +1020,61 @@ class IntegrationTest extends IntegrationTestCase
         // Check it's the expired one that has gone
         $this->expectException(UnableToReadFile::class);
         $this->adapter->read($pathPast);
+    }
+
+    public function testCopyRetainsExpiryAndAdditional(): void
+    {
+        $expiry = new \DateTimeImmutable('+2 day');
+        $meta = [
+            'owner' => 'example',
+        ];
+        $this->adapter->write('/source.txt', 'content', new Config([
+            'expiry' => $expiry,
+            'meta' => $meta,
+        ]));
+
+        $this->adapter->copy('/source.txt', '/destination.txt', $this->emptyConfig);
+
+        $actual = $this->adapter->expiry('/destination.txt');
+        static::assertSame($expiry->format('Y-m-d H:i:s'), $actual->expiry()->format('Y-m-d H:i:s'));
+        static::assertSame($meta, $actual->extraMetadata());
+        static::assertSame('content', $this->adapter->read('/destination.txt'));
+    }
+
+    public function testCopyReplacesExistingFile(): void
+    {
+        $this->adapter->write('/source.txt', 'new content', $this->emptyConfig);
+        $this->adapter->write('/destination.txt', 'old content', $this->emptyConfig);
+
+        $this->adapter->copy('/source.txt', '/destination.txt', $this->emptyConfig);
+
+        static::assertSame('new content', $this->adapter->read('/destination.txt'));
+        static::assertRowCount(2, 'flysystem_path');
+        static::assertRowCount(2, 'flysystem_chunk');
+    }
+
+    public function testCopyWhereDirectoryExists(): void
+    {
+        $this->adapter->write('/source.txt', 'content', $this->emptyConfig);
+        $this->adapter->createDirectory('/destination', $this->emptyConfig);
+
+        $this->expectException(UnableToCopyFile::class);
+        $this->adapter->copy('/source.txt', '/destination', $this->emptyConfig);
+    }
+
+    public function testSetVisibilityWhenPathDoesNotExist(): void
+    {
+        $this->expectException(UnableToSetVisibility::class);
+        $this->adapter->setVisibility('/does/not/exist.txt', Visibility::PRIVATE);
+    }
+
+    public function testMimeTypeUnknown(): void
+    {
+        // A stream with an unknown extension cannot be detected
+        $this->adapter->writeStream('/file.unknown', $this->createResource(static::$tempFiles['10B']), $this->emptyConfig);
+
+        $this->expectException(UnableToRetrieveMetadata::class);
+        $this->adapter->mimeType('/file.unknown');
     }
 
     /**

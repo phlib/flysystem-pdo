@@ -20,6 +20,7 @@
         "league/flysystem": "^2"
     },
     "require-dev": {
+        "league/flysystem-adapter-test-utilities": "^2",
         "phpunit/phpunit": "^10",
         "symplify/easy-coding-standard": "^13.3"
     },
