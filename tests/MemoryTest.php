@@ -74,7 +74,7 @@ class MemoryTest extends IntegrationTestCase
         $config = $this->emptyConfig;
         if (static::getDbDriverName() === 'mysql') {
             $config = new Config([
-                'enable_mysql_buffering' => true,
+                'disable_mysql_buffering' => false,
             ]);
         }
         $adapter = new PdoAdapter(static::getTestDbAdapter(), $config);
@@ -98,7 +98,7 @@ class MemoryTest extends IntegrationTestCase
         }
 
         $config = new Config([
-            'enable_mysql_buffering' => false,
+            'disable_mysql_buffering' => true,
         ]);
         $adapter = new PdoAdapter(static::getTestDbAdapter(), $config);
 
