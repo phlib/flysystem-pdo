@@ -32,6 +32,39 @@ class PdoAdapterTest extends TestCase
         static::assertInstanceOf(AdapterInterface::class, $this->adapter);
     }
 
+    public function testMysqlBufferingDisabledByDefault(): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->expects(static::once())
+            ->method('setAttribute')
+            ->with(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
+
+        new PdoAdapter($pdo);
+    }
+
+    public function testMysqlBufferingDisabledByDefaultWithOtherConfig(): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->expects(static::once())
+            ->method('setAttribute')
+            ->with(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
+
+        new PdoAdapter($pdo, new Config([
+            'table_prefix' => 'myprefix',
+        ]));
+    }
+
+    public function testMysqlBufferingNotDisabled(): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->expects(static::never())
+            ->method('setAttribute');
+
+        new PdoAdapter($pdo, new Config([
+            'disable_mysql_buffering' => false,
+        ]));
+    }
+
     public function testTablePrefixDefault(): void
     {
         $default = 'flysystem';
