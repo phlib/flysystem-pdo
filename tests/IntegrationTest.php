@@ -769,11 +769,14 @@ class IntegrationTest extends IntegrationTestCase
 
         $listBefore = $this->adapter->listContents('/path/with');
         static::assertCount(3, $listBefore);
+        // Each file is smaller than the chunk size, so has a single chunk
+        static::assertRowCount(3, 'flysystem_chunk');
 
-        $this->adapter->deleteExpired();
+        static::assertSame(1, $this->adapter->deleteExpired());
 
         $listAfter = $this->adapter->listContents('/path/with');
         static::assertCount(2, $listAfter);
+        static::assertRowCount(2, 'flysystem_chunk', 'Chunks for the expired file should be deleted');
 
         // Check it's the expired one that has gone
         $actual = $this->adapter->read($pathPast);

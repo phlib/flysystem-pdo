@@ -1094,11 +1094,12 @@ class PdoAdapterTest extends TestCase
 
         $expiredStmt = $this->createMock(\PDOStatement::class);
         $deleteStmt = $this->createMock(\PDOStatement::class);
+        $deleteChunksStmt = $this->createMock(\PDOStatement::class);
 
-        $this->pdo->expects(static::exactly(2))
+        $this->pdo->expects(static::exactly(3))
             ->method('prepare')
             ->with()
-            ->willReturnCallback(function (string $actualSql) use ($expiredStmt, $deleteStmt): \PDOStatement {
+            ->willReturnCallback(function (string $actualSql) use ($expiredStmt, $deleteStmt, $deleteChunksStmt): \PDOStatement {
                 static $callCount = 0;
                 $callCount++;
 
@@ -1107,9 +1108,13 @@ class PdoAdapterTest extends TestCase
                         static::assertStringContainsString('WHERE expiry <= :now', $actualSql);
                         return $expiredStmt;
                     case 2:
-                        static::assertStringContainsString('DELETE FROM ', $actualSql);
+                        static::assertStringContainsString('DELETE FROM flysystem_path ', $actualSql);
                         static::assertStringContainsString('WHERE path_id = :path_id', $actualSql);
                         return $deleteStmt;
+                    case 3:
+                        static::assertStringContainsString('DELETE FROM flysystem_chunk ', $actualSql);
+                        static::assertStringContainsString('WHERE path_id = :path_id', $actualSql);
+                        return $deleteChunksStmt;
                     default:
                         static::fail('Method called more times than expected');
                 }
@@ -1126,10 +1131,6 @@ class PdoAdapterTest extends TestCase
             ->method('fetchAll')
             ->willReturn($rows);
 
-        $expiredStmt->expects(static::once())
-            ->method('rowCount')
-            ->willReturn(1);
-
         $deleteStmt->expects(static::once())
             ->method('execute')
             ->with([
@@ -1137,7 +1138,14 @@ class PdoAdapterTest extends TestCase
             ])
             ->willReturn(true);
 
-        $this->adapter->deleteExpired();
+        $deleteChunksStmt->expects(static::once())
+            ->method('execute')
+            ->with([
+                'path_id' => $pathId,
+            ])
+            ->willReturn(true);
+
+        static::assertSame(1, $this->adapter->deleteExpired());
     }
 
     public function testDeleteExpiredSpecific(): void
@@ -1164,11 +1172,7 @@ class PdoAdapterTest extends TestCase
             ->method('fetchAll')
             ->willReturn([]);
 
-        $expiredStmt->expects(static::once())
-            ->method('rowCount')
-            ->willReturn(0);
-
-        $this->adapter->deleteExpired($expiry);
+        static::assertSame(0, $this->adapter->deleteExpired($expiry));
     }
 
     /**

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - **BC break**: `deleteExpired()` no longer accepts `null`; omit the argument to
   use the current time.
 ### Fixed
+- Delete file storage chunks for expired files when calling `deleteExpired()`.
 - Temporary files are removed when writing or updating a file fails, or when
   updating a file that does not exist.
 ### Removed

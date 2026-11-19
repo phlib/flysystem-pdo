@@ -667,9 +667,10 @@ class PdoAdapter implements AdapterInterface
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         foreach ($rows as $row) {
             $this->deletePath((int) $row['path_id']);
+            $this->deleteChunks((int) $row['path_id']);
         }
 
-        return $stmt->rowCount();
+        return count($rows);
     }
 
     protected function deletePath(int $pathId): void
