@@ -59,7 +59,10 @@ jobs:
             ${{ runner.os }}-php${{ matrix.php }}-
 
       - name: Composer
-        run: composer install --no-progress
+        # TEMPORARY: league/flysystem v1 is affected by these advisories. Remove after the Flysystem v3 upgrade.
+        run: |
+          composer config --json policy.advisories.ignore-id '["PKSA-w9tt-7782-78jx","PKSA-pwh8-d4fr-nywn"]'
+          composer install --no-progress
 
       - name: Check CS
         run: vendor/bin/ecs
