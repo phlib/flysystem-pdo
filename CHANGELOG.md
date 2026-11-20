@@ -5,9 +5,13 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+### Changed
+- **BC break**: Expiry date is always set & retrieved using \DateTimeImmutable.
 ### Removed
 - Remove support for PHP versions <= v8.0 as they are no longer
   [actively supported](https://php.net/supported-versions.php) by the PHP project.
+### Fixed
+- Delete file storage chunks for expired files when calling `deleteExpired()`.
 
 ## [2.2.0] - 2026-10-13
 ### Changed
