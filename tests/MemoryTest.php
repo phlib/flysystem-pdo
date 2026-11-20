@@ -6,10 +6,9 @@ namespace Phlib\Flysystem\Pdo\Tests;
 
 use League\Flysystem\Config;
 use Phlib\Flysystem\Pdo\PdoAdapter;
+use PHPUnit\Framework\Attributes\Group;
 
-/**
- * @group integration
- */
+#[Group('integration')]
 class MemoryTest extends IntegrationTestCase
 {
     protected static array $tempFileSize = [
