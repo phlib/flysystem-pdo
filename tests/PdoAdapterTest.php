@@ -271,6 +271,33 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $actual);
     }
 
+    public function testWriteWithExpiryPast(): void
+    {
+        // An already-expired file is not stored
+        $this->pdo->expects(static::never())
+            ->method('prepare');
+
+        $config = new Config([
+            'expiry' => new \DateTimeImmutable('-2 day'),
+        ]);
+
+        static::assertFalse($this->adapter->write('/path/to/file.txt', 'Test Content', $config));
+    }
+
+    public function testWriteStreamWithExpiryPast(): void
+    {
+        // An already-expired file is not stored
+        $this->pdo->expects(static::never())
+            ->method('prepare');
+
+        $config = new Config([
+            'expiry' => new \DateTimeImmutable('-2 day'),
+        ]);
+
+        $actual = $this->adapter->writeStream('/path/to/file.txt', $this->createTempResource('Test Content'), $config);
+        static::assertFalse($actual);
+    }
+
     public function testWriteWithAdditionalFields(): void
     {
         $this->setupBasicDbResponse();
@@ -848,6 +875,33 @@ class PdoAdapterTest extends TestCase
         static::assertTrue($this->adapter->has('/this/path'));
     }
 
+    public function testHasExcludesExpired(): void
+    {
+        $path = '/this/path';
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $this->pdo->expects(static::once())
+            ->method('prepare')
+            ->with(static::stringContains('WHERE path = :path AND (expiry IS NULL OR expiry > :now)'))
+            ->willReturn($stmt);
+
+        $stmt->expects(static::once())
+            ->method('execute')
+            ->with(static::callback(function (array $params) use ($path): bool {
+                static::assertSame($path, $params['path']);
+                static::assertNowParam($params['now']);
+                return true;
+            }))
+            ->willReturn(true);
+
+        // An expired row is excluded by the DB query
+        $stmt->expects(static::once())
+            ->method('fetchColumn')
+            ->willReturn(false);
+
+        static::assertFalse($this->adapter->has($path));
+    }
+
     public function testRead(): void
     {
         $pathId = rand(1, 1000);
@@ -920,28 +974,31 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $actual);
     }
 
-    public function testReadWithExpiryPast(): void
+    public function testReadExcludesExpired(): void
     {
-        $pathId = rand(1, 1000);
-        $size = rand(1000, 99999);
         $path = '/path/to/file.txt';
-        $updateTs = date('Y-m-d H:i:s');
-        $expiry = new \DateTimeImmutable('-2 day');
 
-        $this->setupDbFetchResponse([
-            'path_id' => $pathId,
-            'path' => $path,
-            'type' => 'file',
-            'mimetype' => 'text/plain',
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'size' => $size,
-            'is_compressed' => false,
-            'expiry' => $expiry->format('Y-m-d H:i:s'),
-            'update_ts' => $updateTs,
-        ]);
+        $stmt = $this->createMock(\PDOStatement::class);
+        $this->pdo->expects(static::once())
+            ->method('prepare')
+            ->with(static::stringContains('WHERE path = :path AND (expiry IS NULL OR expiry > :now)'))
+            ->willReturn($stmt);
 
-        $actual = $this->adapter->read($path);
-        static::assertFalse($actual);
+        $stmt->expects(static::once())
+            ->method('execute')
+            ->with(static::callback(function (array $params) use ($path): bool {
+                static::assertSame($path, $params['path']);
+                static::assertNowParam($params['now']);
+                return true;
+            }))
+            ->willReturn(true);
+
+        // An expired row is excluded by the DB query
+        $stmt->expects(static::once())
+            ->method('fetch')
+            ->willReturn(false);
+
+        static::assertFalse($this->adapter->read($path));
     }
 
     public function testReadReturnsContents(): void
@@ -997,6 +1054,60 @@ class PdoAdapterTest extends TestCase
         );
         $listing = $this->adapter->listContents('/path');
         static::assertCount(1, $listing);
+    }
+
+    public function testListContentsExcludesExpired(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $this->pdo->expects(static::once())
+            ->method('prepare')
+            ->with(static::stringContains(
+                'WHERE (expiry IS NULL OR expiry > :now) AND (path LIKE :prefix OR path = :path)',
+            ))
+            ->willReturn($stmt);
+
+        $stmt->expects(static::once())
+            ->method('execute')
+            ->with(static::callback(function (array $params): bool {
+                static::assertSame('/path/%', $params['prefix']);
+                static::assertSame('/path', $params['path']);
+                static::assertNowParam($params['now']);
+                return true;
+            }))
+            ->willReturn(true);
+
+        $stmt->expects(static::once())
+            ->method('fetchAll')
+            ->willReturn([]);
+
+        static::assertEmpty($this->adapter->listContents('/path'));
+    }
+
+    public function testListContentsRootExcludesExpired(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $this->pdo->expects(static::once())
+            ->method('prepare')
+            ->with(static::logicalAnd(
+                static::stringEndsWith('WHERE (expiry IS NULL OR expiry > :now)'),
+                static::logicalNot(static::stringContains(':prefix')),
+            ))
+            ->willReturn($stmt);
+
+        $stmt->expects(static::once())
+            ->method('execute')
+            ->with(static::callback(function (array $params): bool {
+                static::assertSame(['now'], array_keys($params));
+                static::assertNowParam($params['now']);
+                return true;
+            }))
+            ->willReturn(true);
+
+        $stmt->expects(static::once())
+            ->method('fetchAll')
+            ->willReturn([]);
+
+        static::assertEmpty($this->adapter->listContents());
     }
 
     public function testListContentsWithEmtpyResults(): void
@@ -1215,6 +1326,13 @@ class PdoAdapterTest extends TestCase
             ->willReturn([]);
 
         static::assertSame(0, $this->adapter->deleteExpired($expiry));
+    }
+
+    private static function assertNowParam(string $actual): void
+    {
+        // Allow for the clock ticking over between the call and the assertion
+        static::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $actual);
+        static::assertEqualsWithDelta(time(), strtotime($actual), 1);
     }
 
     /**

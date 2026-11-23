@@ -131,10 +131,31 @@ class IntegrationTest extends IntegrationTestCase
 
         $content = sha1(uniqid('Test content'));
 
-        $this->adapter->write($path, $content, $config);
-        $actual = $this->adapter->read($path);
+        static::assertFalse($this->adapter->write($path, $content, $config));
+        static::assertFalse($this->adapter->read($path));
 
-        static::assertFalse($actual);
+        // An already-expired file is not stored
+        static::assertRowCount(0, 'flysystem_path');
+        static::assertRowCount(0, 'flysystem_chunk');
+    }
+
+    public function testWriteOverExpiredPath(): void
+    {
+        $path = '/path/to/file.txt';
+        $content1 = sha1(uniqid('Test content 1'));
+        $content2 = sha1(uniqid('Test content 2'));
+
+        $this->writeExpiredFile($path, $content1);
+        $this->adapter->write($path, $content2, $this->emptyConfig);
+
+        $actual = $this->adapter->read($path);
+        static::assertSame($content2, $actual['contents']);
+        static::assertArrayNotHasKey('expiry', $actual);
+
+        // The expired row remains until it is purged
+        static::assertRowCount(2, 'flysystem_path');
+        static::assertSame(1, $this->adapter->deleteExpired());
+        static::assertSame($content2, $this->adapter->read($path)['contents']);
     }
 
     public function testWrittenAndReadWithAdditional(): void
@@ -625,6 +646,28 @@ class IntegrationTest extends IntegrationTestCase
         ];
     }
 
+    public function testListContentsExcludesExpired(): void
+    {
+        $configFuture = new Config([
+            'expiry' => new \DateTimeImmutable('+2 day'),
+        ]);
+
+        $this->writeExpiredFile('/path/expiry-past.txt', 'Test content');
+        $this->adapter->write('/path/expiry-future.txt', 'Test content', $configFuture);
+        $this->adapter->write('/path/expiry-none.txt', 'Test content', $this->emptyConfig);
+
+        $expected = [
+            '/path/expiry-future.txt',
+            '/path/expiry-none.txt',
+        ];
+
+        foreach (['/path', ''] as $directory) {
+            $actual = array_column($this->adapter->listContents($directory, true), 'path');
+            sort($actual);
+            static::assertSame($expected, $actual);
+        }
+    }
+
     public function testCreateDirectoryWithAdditional(): void
     {
         $path = '/new/directory';
@@ -682,6 +725,15 @@ class IntegrationTest extends IntegrationTestCase
         $path = '/this/path/does/exist.txt';
         $this->adapter->write($path, 'some text', $this->emptyConfig);
         static::assertTrue($this->adapter->has($path));
+    }
+
+    public function testHasWithExpiryPast(): void
+    {
+        $path = '/path/to/file.txt';
+        $this->writeExpiredFile($path, 'Test content');
+
+        static::assertFalse($this->adapter->has($path));
+        static::assertFalse($this->adapter->getMetadata($path));
     }
 
     public function testCopyingNonExistentPath(): void
@@ -753,11 +805,7 @@ class IntegrationTest extends IntegrationTestCase
 
         // File with past expiry
         $pathPast = '/path/with/expiry-past.txt';
-        $expiryPast = new \DateTimeImmutable('-2 day');
-        $configPast = new Config([
-            'expiry' => $expiryPast,
-        ]);
-        $this->adapter->write($pathPast, $content, $configPast);
+        $this->writeExpiredFile($pathPast, $content);
 
         // File with future expiry
         $pathFuture = '/path/with/expiry-future.txt';
@@ -767,8 +815,10 @@ class IntegrationTest extends IntegrationTestCase
         ]);
         $this->adapter->write($pathFuture, $content, $configFuture);
 
+        // The expired file is excluded from the listing, but still exists in the DB
         $listBefore = $this->adapter->listContents('/path/with');
-        static::assertCount(3, $listBefore);
+        static::assertCount(2, $listBefore);
+        static::assertRowCount(3, 'flysystem_path');
         // Each file is smaller than the chunk size, so has a single chunk
         static::assertRowCount(3, 'flysystem_chunk');
 
@@ -776,11 +826,29 @@ class IntegrationTest extends IntegrationTestCase
 
         $listAfter = $this->adapter->listContents('/path/with');
         static::assertCount(2, $listAfter);
+        static::assertRowCount(2, 'flysystem_path');
         static::assertRowCount(2, 'flysystem_chunk', 'Chunks for the expired file should be deleted');
 
         // Check it's the expired one that has gone
         $actual = $this->adapter->read($pathPast);
         static::assertFalse($actual);
+    }
+
+    /**
+     * The adapter does not store a file which is written with an expiry in the past,
+     * so write with a future expiry and then move it to the past directly in the DB.
+     */
+    private function writeExpiredFile(string $path, string $content): void
+    {
+        $this->adapter->write($path, $content, new Config([
+            'expiry' => new \DateTimeImmutable('+2 day'),
+        ]));
+
+        $stmt = static::getTestDbAdapter()->prepare('UPDATE flysystem_path SET expiry = :expiry WHERE path = :path');
+        $stmt->execute([
+            'expiry' => (new \DateTimeImmutable('-2 day'))->format('Y-m-d H:i:s'),
+            'path' => $path,
+        ]);
     }
 
     /**

@@ -59,6 +59,10 @@ class PdoAdapter implements AdapterInterface
      */
     public function write($path, $contents, Config $config)
     {
+        if ($this->isExpiryInPast($config)) {
+            return false;
+        }
+
         $filename = $this->getTempFilename();
         $resource = $this->getTempResource($filename, $contents);
 
@@ -72,6 +76,10 @@ class PdoAdapter implements AdapterInterface
      */
     public function writeStream($path, $resource, Config $config)
     {
+        if ($this->isExpiryInPast($config)) {
+            return false;
+        }
+
         $filename = $this->getTempFilename();
         $resource = $this->getTempResource($filename, $resource);
 
@@ -191,6 +199,11 @@ class PdoAdapter implements AdapterInterface
             $this->insertChunks($data['path_id'], $resource, (bool) $data['is_compressed']);
         } finally {
             $this->cleanupTemp($resource, $filename);
+        }
+
+        if ($this->hasExpired($data)) {
+            // Updated with an expiry in the past, so the file is immediately unavailable
+            return false;
         }
 
         $data['update_ts'] = date('Y-m-d H:i:s');
@@ -367,10 +380,11 @@ class PdoAdapter implements AdapterInterface
      */
     public function has($path): bool
     {
-        $select = "SELECT 1 FROM {$this->pathTable} WHERE path = :path LIMIT 1";
+        $select = "SELECT 1 FROM {$this->pathTable} WHERE path = :path AND {$this->notExpiredCondition()} LIMIT 1";
         $stmt = $this->db->prepare($select);
         $stmt->execute([
             'path' => $path,
+            ...$this->getExpiredConditionBindParams(),
         ]);
 
         return (bool) $stmt->fetchColumn();
@@ -461,15 +475,13 @@ class PdoAdapter implements AdapterInterface
      */
     public function listContents($directory = '', $recursive = false): array
     {
-        $params = [];
-        $select = "SELECT * FROM {$this->pathTable}";
+        $params = $this->getExpiredConditionBindParams();
+        $select = "SELECT * FROM {$this->pathTable} WHERE {$this->notExpiredCondition()}";
 
         if (!empty($directory)) {
-            $select .= ' WHERE path LIKE :prefix OR path = :path';
-            $params = [
-                'prefix' => $directory . '/%',
-                'path' => $directory,
-            ];
+            $select .= ' AND (path LIKE :prefix OR path = :path)';
+            $params['prefix'] = $directory . '/%';
+            $params['path'] = $directory;
         }
 
         $stmt = $this->db->prepare($select);
@@ -533,14 +545,15 @@ class PdoAdapter implements AdapterInterface
      */
     protected function findPathData(string $path)
     {
-        $select = "SELECT * FROM {$this->pathTable} WHERE path = :path LIMIT 1";
+        $select = "SELECT * FROM {$this->pathTable} WHERE path = :path AND {$this->notExpiredCondition()} LIMIT 1";
         $stmt = $this->db->prepare($select);
         $stmt->execute([
             'path' => $path,
+            ...$this->getExpiredConditionBindParams(),
         ]);
 
         $data = $stmt->fetch(\PDO::FETCH_ASSOC);
-        if ($data === false || $this->hasExpired($data)) {
+        if ($data === false) {
             return false;
         }
 
@@ -555,7 +568,7 @@ class PdoAdapter implements AdapterInterface
      */
     protected function normalizeMetadata($data)
     {
-        if (!is_array($data) || empty($data) || $this->hasExpired($data)) {
+        if (!is_array($data) || empty($data)) {
             return false;
         }
 
@@ -584,6 +597,36 @@ class PdoAdapter implements AdapterInterface
         return $meta;
     }
 
+    /**
+     * SQL condition to exclude expired paths; requires the params from getExpiredConditionBindParams().
+     */
+    private function notExpiredCondition(): string
+    {
+        return '(expiry IS NULL OR expiry > :now)';
+    }
+
+    /**
+     * The current time is provided by PHP rather than the DB, to avoid any timezone difference.
+     */
+    private function getExpiredConditionBindParams(): array
+    {
+        return [
+            'now' => date('Y-m-d H:i:s'),
+        ];
+    }
+
+    /**
+     * A new file with an expiry in the past would be immediately unavailable, so is not stored
+     */
+    private function isExpiryInPast(Config $config): bool
+    {
+        return $config->has('expiry') && $config->get('expiry') <= new \DateTimeImmutable();
+    }
+
+    /**
+     * Used for metadata which has not been read from the DB, e.g. after an update with an expiry in the past.
+     * Data read from the DB has already been filtered by notExpiredCondition().
+     */
     protected function hasExpired(array $data): bool
     {
         if (isset($data['expiry'])
