@@ -113,6 +113,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         try {
+            $this->deleteExpiredPath($path);
             $data['path_id'] = $this->insertPath(
                 self::TYPE_FILE,
                 $data['path'],
@@ -222,6 +223,7 @@ class PdoAdapter implements AdapterInterface
         // rename the primary node first
         $data = $this->findPathData($path);
         if (is_array($data)) {
+            $this->deleteExpiredPath($newpath);
             $stmt->execute([
                 'newpath' => $newpath,
                 'path_id' => $data['path_id'],
@@ -238,6 +240,7 @@ class PdoAdapter implements AdapterInterface
             }
             foreach ($listing as $item) {
                 $newItemPath = $newpath . substr($item['path'], $pathLength);
+                $this->deleteExpiredPath($newItemPath);
                 $stmt->execute([
                     'newpath' => $newItemPath,
                     'path_id' => $item['path_id'],
@@ -264,6 +267,7 @@ class PdoAdapter implements AdapterInterface
         unset($newData['path_id']);
         unset($newData['update_ts']);
 
+        $this->deleteExpiredPath($newpath);
         $newData['path_id'] = $this->insertPath(
             $data['type'],
             $newData['path'],
@@ -330,6 +334,13 @@ class PdoAdapter implements AdapterInterface
      */
     public function createDir($dirname, Config $config)
     {
+        $existing = $this->findPathData($dirname);
+        if (is_array($existing)) {
+            // Creating a directory which already exists is successful, but it cannot replace a file
+            return $existing['type'] === self::TYPE_DIRECTORY ? $this->normalizeMetadata($existing) : false;
+        }
+
+        $this->deleteExpiredPath($dirname);
         $additional = null;
         if ($config->has('meta')) {
             $additional = $config->get('meta');
@@ -479,9 +490,9 @@ class PdoAdapter implements AdapterInterface
         $select = "SELECT * FROM {$this->pathTable} WHERE {$this->notExpiredCondition()}";
 
         if (!empty($directory)) {
-            $select .= ' AND (path LIKE :prefix OR path = :path)';
-            $params['prefix'] = $directory . '/%';
+            $select .= " AND (path = :path OR {$this->descendantCondition()})";
             $params['path'] = $directory;
+            $params += $this->getDescendantConditionBindParams($directory);
         }
 
         $stmt = $this->db->prepare($select);
@@ -714,6 +725,50 @@ class PdoAdapter implements AdapterInterface
         }
 
         return count($rows);
+    }
+
+    /**
+     * SQL condition to match all paths below a directory; requires the params from getDescendantConditionBindParams().
+     * A range is used rather than `LIKE`, as `LIKE` is case-insensitive in SQLite, and the range can use the path index.
+     */
+    private function descendantCondition(): string
+    {
+        return '(path >= :descendant_from AND path < :descendant_to)';
+    }
+
+    /**
+     * With binary ordering of paths, everything starting with 'dir/' sorts from 'dir/' up to (but excluding) 'dir0',
+     * as '0' is the character following '/'
+     */
+    private function getDescendantConditionBindParams(string $directory): array
+    {
+        $directory = rtrim($directory, '/');
+        return [
+            'descendant_from' => $directory . '/',
+            'descendant_to' => $directory . '0',
+        ];
+    }
+
+    /**
+     * An expired file remains in the DB until it is purged by deleteExpired(), so it must be deleted before another
+     * file can be stored at its path, to avoid a conflict with the unique index on the path
+     */
+    private function deleteExpiredPath(string $path): void
+    {
+        $select = "SELECT path_id FROM {$this->pathTable} WHERE path = :path AND expiry <= :now";
+        $stmt = $this->db->prepare($select);
+        $stmt->execute([
+            'path' => $path,
+            ...$this->getExpiredConditionBindParams(),
+        ]);
+        $data = $stmt->fetch(\PDO::FETCH_ASSOC);
+        // Close the cursor, as further queries cannot run while an unbuffered MySQL result is still open
+        $stmt->closeCursor();
+
+        if (is_array($data)) {
+            $this->deletePath((int) $data['path_id']);
+            $this->deleteChunks((int) $data['path_id']);
+        }
     }
 
     protected function deletePath(int $pathId): void

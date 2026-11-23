@@ -152,10 +152,37 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($content2, $actual['contents']);
         static::assertArrayNotHasKey('expiry', $actual);
 
-        // The expired row remains until it is purged
-        static::assertRowCount(2, 'flysystem_path');
-        static::assertSame(1, $this->adapter->deleteExpired());
-        static::assertSame($content2, $this->adapter->read($path)['contents']);
+        // The expired file is replaced
+        static::assertRowCount(1, 'flysystem_path');
+        static::assertRowCount(1, 'flysystem_chunk');
+        static::assertSame(0, $this->adapter->deleteExpired());
+    }
+
+    public function testPathsAreCaseSensitive(): void
+    {
+        $this->adapter->write('/path/file.txt', 'lower', $this->emptyConfig);
+        $this->adapter->write('/path/FILE.txt', 'upper', $this->emptyConfig);
+
+        static::assertSame('lower', $this->adapter->read('/path/file.txt')['contents']);
+        static::assertSame('upper', $this->adapter->read('/path/FILE.txt')['contents']);
+        static::assertFalse($this->adapter->has('/path/File.txt'));
+        static::assertCount(2, $this->adapter->listContents('/path'));
+        static::assertCount(0, $this->adapter->listContents('/PATH'));
+    }
+
+    public function testPathIsUnique(): void
+    {
+        $this->adapter->write('/path/file.txt', 'content', $this->emptyConfig);
+
+        // Flysystem checks a file does not exist before calling the adapter's write(), so this is only possible
+        // with direct use of the adapter, or a race between two writers
+        try {
+            $result = $this->adapter->write('/path/file.txt', 'other', $this->emptyConfig);
+            static::assertFalse($result);
+        } catch (\PDOException $e) {
+            static::assertSame('23000', $e->getCode());
+        }
+        static::assertRowCount(1, 'flysystem_path');
     }
 
     public function testWrittenAndReadWithAdditional(): void
@@ -481,6 +508,18 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame($origDataSet, $copyDataSet);
     }
 
+    public function testCopyOverExpiredPath(): void
+    {
+        $this->writeExpiredFile('/destination.txt', 'old content');
+        $this->adapter->write('/source.txt', 'new content', $this->emptyConfig);
+
+        static::assertTrue($this->adapter->copy('/source.txt', '/destination.txt'));
+
+        static::assertSame('new content', $this->adapter->read('/destination.txt')['contents']);
+        static::assertRowCount(2, 'flysystem_path');
+        static::assertRowCount(2, 'flysystem_chunk');
+    }
+
     public function testRenameFile(): void
     {
         $path1 = '/first.txt';
@@ -502,6 +541,18 @@ class IntegrationTest extends IntegrationTestCase
 
         static::assertFalse($actual1New);
         static::assertSame($testContent, $actual2New['contents']);
+    }
+
+    public function testRenameOverExpiredPath(): void
+    {
+        $this->writeExpiredFile('/destination.txt', 'old content');
+        $this->adapter->write('/source.txt', 'new content', $this->emptyConfig);
+
+        static::assertTrue($this->adapter->rename('/source.txt', '/destination.txt'));
+
+        static::assertSame('new content', $this->adapter->read('/destination.txt')['contents']);
+        static::assertRowCount(1, 'flysystem_path');
+        static::assertRowCount(1, 'flysystem_chunk');
     }
 
     #[DataProvider('dataRenameDirectory')]
@@ -571,6 +622,17 @@ class IntegrationTest extends IntegrationTestCase
             'withDirectory' => [true],
             'withoutDirectory' => [false],
         ];
+    }
+
+    public function testRenameDirectoryOverExpiredPath(): void
+    {
+        $this->writeExpiredFile('/destination/file.txt', 'old content');
+        $this->adapter->write('/source/file.txt', 'new content', $this->emptyConfig);
+
+        static::assertTrue($this->adapter->rename('/source', '/destination'));
+
+        static::assertSame('new content', $this->adapter->read('/destination/file.txt')['contents']);
+        static::assertRowCount(1, 'flysystem_path');
     }
 
     #[DataProvider('pathsDataProvider')]
@@ -668,6 +730,33 @@ class IntegrationTest extends IntegrationTestCase
         }
     }
 
+    public function testListContentsExcludesSimilarPaths(): void
+    {
+        $this->adapter->write('/path/file.txt', 'content', $this->emptyConfig);
+        $this->adapter->write('/path/sub/file.txt', 'content', $this->emptyConfig);
+        // Sorts between '/path/' and '/path0'
+        $this->adapter->write('/path/~file.txt', 'content', $this->emptyConfig);
+        // Sorts before '/path/'
+        $this->adapter->write('/path-other/file.txt', 'content', $this->emptyConfig);
+        $this->adapter->write('/path.txt', 'content', $this->emptyConfig);
+        // Sorts after '/path0'
+        $this->adapter->write('/path0/file.txt', 'content', $this->emptyConfig);
+        $this->adapter->write('/pathx/file.txt', 'content', $this->emptyConfig);
+        // Not treated as wildcards
+        $this->adapter->write('/p_th/file.txt', 'content', $this->emptyConfig);
+        $this->adapter->write('/p%th/file.txt', 'content', $this->emptyConfig);
+
+        $actual = array_column($this->adapter->listContents('/path', true), 'path');
+        sort($actual);
+        static::assertSame([
+            '/path/file.txt',
+            '/path/sub/file.txt',
+            '/path/~file.txt',
+        ], $actual);
+
+        static::assertSame(['/p_th/file.txt'], array_column($this->adapter->listContents('/p_th'), 'path'));
+    }
+
     public function testCreateDirectoryWithAdditional(): void
     {
         $path = '/new/directory';
@@ -683,6 +772,34 @@ class IntegrationTest extends IntegrationTestCase
         $actual = $this->adapter->read($path);
 
         static::assertSame($additional, $actual['meta']);
+    }
+
+    public function testCreateDirOverExpiredPath(): void
+    {
+        $this->writeExpiredFile('/path', 'old content');
+
+        static::assertNotFalse($this->adapter->createDir('/path', $this->emptyConfig));
+
+        static::assertSame('dir', $this->adapter->getMetadata('/path')['type']);
+        static::assertRowCount(1, 'flysystem_path');
+        static::assertRowCount(0, 'flysystem_chunk');
+    }
+
+    public function testCreateDirIsIdempotent(): void
+    {
+        $first = $this->adapter->createDir('/path', $this->emptyConfig);
+        $second = $this->adapter->createDir('/path', $this->emptyConfig);
+
+        static::assertSame($first['path_id'], $second['path_id']);
+        static::assertRowCount(1, 'flysystem_path');
+    }
+
+    public function testCreateDirWhereFileExists(): void
+    {
+        $this->adapter->write('/path', 'content', $this->emptyConfig);
+
+        static::assertFalse($this->adapter->createDir('/path', $this->emptyConfig));
+        static::assertSame('file', $this->adapter->getMetadata('/path')['type']);
     }
 
     public function testDeletingDirectoryClearsAllFiles(): void

@@ -139,12 +139,39 @@ $data = $adapter->getMetadata($path);
 Schemas can be found in the schema directory. Specific types can be changed based on requirements. All field names 
 should remain the same. Notes about the DB specific definitions are below.
 
+### Indexes
+* `idx_path` is a unique index on the `path` column. Paths are case-sensitive.
+* `idx_expiry` is an index on the `expiry` column, used when deleting expired files.
+
+Implementations upgrading from v1 can update existing tables as below.
+Any duplicate paths must be removed before the unique index can be added;
+these can be found with `SELECT path, COUNT(*) FROM flysystem_path GROUP BY path HAVING COUNT(*) > 1`.
+
+MySQL:
+```sql
+ALTER TABLE `flysystem_path`
+  MODIFY `path` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  ADD UNIQUE KEY `idx_path` (`path`),
+  ADD KEY `idx_expiry` (`expiry`);
+```
+
+SQLite:
+```sql
+CREATE UNIQUE INDEX idx_path ON flysystem_path (path);
+CREATE INDEX idx_expiry ON flysystem_path (expiry);
+```
+
+SQLite index names are unique across the whole database, so when using more than one table prefix in the same
+database, the index names must also be changed to include the prefix.
+
 ### MySQL Notes
 * The `path` column is set to allow up to 255 characters.
+* The `path` column uses the `utf8mb4_bin` collation, so that paths are case-sensitive, consistent with SQLite and
+most filesystems. The unique index on 255 `utf8mb4` characters requires the `DYNAMIC` (default since MySQL 5.7) or
+`COMPRESSED` row format.
 * The `size` column has been set to a unsigned `INT` type to allow for convenient searching. This allows up to 4G files 
 to be recorded. This can be changed to a `VARCHAR` if searching is not required.
 * The size of chunks, allows for up to 16M per chunk.
-
 
 ## Memory Usage (and gotchas)
 

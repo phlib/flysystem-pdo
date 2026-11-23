@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Expired files are excluded by the DB queries, rather than being filtered after
   they have been read.
 - Writing a new file with an expiry in the past does not store the file.
+- **BC break**: DB schema adds a unique index on `path` and an index on
+  `expiry`. Paths are case-sensitive on MySQL, using the `utf8mb4_bin`
+  collation. See the README for updating existing tables.
+- `createDir()` returns the existing directory, rather than creating a
+  duplicate.
 ### Fixed
 - Delete file storage chunks for expired files when calling `deleteExpired()`.
 - `has()` and `listContents()` no longer include expired files.
