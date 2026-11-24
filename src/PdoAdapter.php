@@ -24,6 +24,12 @@ class PdoAdapter implements AdapterInterface
         protected \PDO $db,
         Config $config = new Config(),
     ) {
+        if ($this->db->getAttribute(\PDO::ATTR_ERRMODE) !== \PDO::ERRMODE_EXCEPTION) {
+            throw new \InvalidArgumentException(
+                'phlib/flysystem-pdo: PDO must use the exception error mode, \PDO::ERRMODE_EXCEPTION',
+            );
+        }
+
         $defaultPrefix = 'flysystem';
         $config->setFallback(new Config([
             'table_prefix' => $defaultPrefix,
@@ -105,23 +111,21 @@ class PdoAdapter implements AdapterInterface
             $data['meta'] = json_encode($meta);
         }
 
-        $data['path_id'] = $this->insertPath(
-            self::TYPE_FILE,
-            $data['path'],
-            $data['visibility'],
-            $data['mimetype'],
-            $data['size'],
-            $enableCompression,
-            $expiry,
-            $meta,
-        );
-        if ($data['path_id'] === false) {
+        try {
+            $data['path_id'] = $this->insertPath(
+                self::TYPE_FILE,
+                $data['path'],
+                $data['visibility'],
+                $data['mimetype'],
+                $data['size'],
+                $enableCompression,
+                $expiry,
+                $meta,
+            );
+            $this->insertChunks($data['path_id'], $resource, $enableCompression);
+        } finally {
             $this->cleanupTemp($resource, $filename);
-            return false;
         }
-
-        $this->insertChunks($data['path_id'], $resource, $enableCompression);
-        $this->cleanupTemp($resource, $filename);
 
         $data['update_ts'] = date('Y-m-d H:i:s');
         return $this->normalizeMetadata($data);
@@ -161,6 +165,7 @@ class PdoAdapter implements AdapterInterface
     {
         $data = $this->findPathData($path);
         if (!is_array($data) || $data['type'] !== self::TYPE_FILE) {
+            $this->cleanupTemp($resource, $filename);
             return false;
         }
 
@@ -194,13 +199,13 @@ class PdoAdapter implements AdapterInterface
         $params = array_merge($values, [
             'path_id' => $data['path_id'],
         ]);
-        if (!$stmt->execute($params)) {
-            return false;
+        try {
+            $stmt->execute($params);
+            $this->deleteChunks($data['path_id']);
+            $this->insertChunks($data['path_id'], $resource, (bool) $data['is_compressed']);
+        } finally {
+            $this->cleanupTemp($resource, $filename);
         }
-
-        $this->deleteChunks($data['path_id']);
-        $this->insertChunks($data['path_id'], $resource, (bool) $data['is_compressed']);
-        $this->cleanupTemp($resource, $filename);
 
         $data['update_ts'] = date('Y-m-d H:i:s');
         return $this->normalizeMetadata($data);
@@ -218,13 +223,10 @@ class PdoAdapter implements AdapterInterface
         // rename the primary node first
         $data = $this->findPathData($path);
         if (is_array($data)) {
-            $result = $stmt->execute([
+            $stmt->execute([
                 'newpath' => $newpath,
                 'path_id' => $data['path_id'],
             ]);
-            if (!$result) {
-                return false;
-            }
         }
 
         // rename all children when it's directory; it may be a directory if no record was found for exact match
@@ -293,9 +295,7 @@ class PdoAdapter implements AdapterInterface
             return false;
         }
 
-        if (!$this->deletePath($data['path_id'])) {
-            return false;
-        }
+        $this->deletePath($data['path_id']);
         $this->deleteChunks($data['path_id']);
 
         return true;
@@ -320,7 +320,9 @@ class PdoAdapter implements AdapterInterface
             }
         }
 
-        return $this->deletePath($data['path_id']);
+        $this->deletePath($data['path_id']);
+
+        return true;
     }
 
     /**
@@ -343,9 +345,6 @@ class PdoAdapter implements AdapterInterface
             null,
             $additional,
         );
-        if ($pathId === false) {
-            return false;
-        }
 
         $data = [
             'type' => self::TYPE_DIRECTORY,
@@ -372,9 +371,7 @@ class PdoAdapter implements AdapterInterface
             'path' => $path,
         ];
         $stmt = $this->db->prepare($update);
-        if (!$stmt->execute($data)) {
-            return false;
-        }
+        $stmt->execute($data);
 
         return $this->getMetadata($path);
     }
@@ -386,12 +383,9 @@ class PdoAdapter implements AdapterInterface
     {
         $select = "SELECT 1 FROM {$this->pathTable} WHERE path = :path LIMIT 1";
         $stmt = $this->db->prepare($select);
-        $result = $stmt->execute([
+        $stmt->execute([
             'path' => $path,
         ]);
-        if (!$result) {
-            return false;
-        }
 
         return (bool) $stmt->fetchColumn();
     }
@@ -493,9 +487,7 @@ class PdoAdapter implements AdapterInterface
         }
 
         $stmt = $this->db->prepare($select);
-        if (!$stmt->execute($params)) {
-            return [];
-        }
+        $stmt->execute($params);
 
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         $rows = array_map($this->normalizeMetadata(...), $rows);
@@ -557,12 +549,9 @@ class PdoAdapter implements AdapterInterface
     {
         $select = "SELECT * FROM {$this->pathTable} WHERE path = :path LIMIT 1";
         $stmt = $this->db->prepare($select);
-        $result = $stmt->execute([
+        $stmt->execute([
             'path' => $path,
         ]);
-        if (!$result) {
-            return false;
-        }
 
         $data = $stmt->fetch(\PDO::FETCH_ASSOC);
         if ($data === false || $this->hasExpired($data)) {
@@ -639,7 +628,6 @@ class PdoAdapter implements AdapterInterface
     /**
      * @param string $type self::TYPE_FILE or self::TYPE_DIR
      * @param string|null $visibility 'public' or 'private'
-     * @return int|false
      */
     protected function insertPath(
         string $type,
@@ -650,7 +638,7 @@ class PdoAdapter implements AdapterInterface
         bool $enableCompression = true,
         ?\DateTimeImmutable $expiry = null,
         ?array $additional = null,
-    ) {
+    ): int {
         $data = [
             'type' => $type === self::TYPE_DIRECTORY ? self::TYPE_DIRECTORY : self::TYPE_FILE,
             'path' => $path,
@@ -674,9 +662,7 @@ class PdoAdapter implements AdapterInterface
 
         $insert = "INSERT INTO {$this->pathTable} ({$fields}) VALUES ({$values})";
         $stmt = $this->db->prepare($insert);
-        if (!$stmt->execute($data)) {
-            return false;
-        }
+        $stmt->execute($data);
 
         return (int) $this->db->lastInsertId();
     }
@@ -712,11 +698,11 @@ class PdoAdapter implements AdapterInterface
         return $stmt->rowCount();
     }
 
-    protected function deletePath(int $pathId): bool
+    protected function deletePath(int $pathId): void
     {
         $delete = "DELETE FROM {$this->pathTable} WHERE path_id = :path_id";
         $stmt = $this->db->prepare($delete);
-        return $stmt->execute([
+        $stmt->execute([
             'path_id' => $pathId,
         ]);
     }
@@ -757,11 +743,11 @@ class PdoAdapter implements AdapterInterface
         }
     }
 
-    protected function deleteChunks(int $pathId): bool
+    protected function deleteChunks(int $pathId): void
     {
         $delete = "DELETE FROM {$this->chunkTable} WHERE path_id = :path_id";
         $stmt = $this->db->prepare($delete);
-        return $stmt->execute([
+        $stmt->execute([
             'path_id' => $pathId,
         ]);
     }

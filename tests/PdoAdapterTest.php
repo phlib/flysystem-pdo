@@ -24,6 +24,11 @@ class PdoAdapterTest extends TestCase
         parent::setUp();
         $this->emptyConfig = new Config();
         $this->pdo = $this->createMock(\PDO::class);
+        $this->pdo->method('getAttribute')
+            ->willReturnCallback(fn(int $attribute) => match ($attribute) {
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                default => null,
+            });
         $this->adapter = new PdoAdapter($this->pdo);
     }
 
@@ -32,11 +37,96 @@ class PdoAdapterTest extends TestCase
         static::assertInstanceOf(AdapterInterface::class, $this->adapter);
     }
 
+    #[DataProvider('dataRequiresExceptionErrorMode')]
+    public function testRequiresExceptionErrorMode(int $errorMode): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('getAttribute')
+            ->with(\PDO::ATTR_ERRMODE)
+            ->willReturn($errorMode);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('ERRMODE_EXCEPTION');
+
+        new PdoAdapter($pdo);
+    }
+
+    public static function dataRequiresExceptionErrorMode(): array
+    {
+        return [
+            'silent' => [\PDO::ERRMODE_SILENT],
+            'warning' => [\PDO::ERRMODE_WARNING],
+        ];
+    }
+
+    #[DataProvider('dataDbFailureThrowsException')]
+    public function testDbFailureThrowsException(string $method, array $args): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('execute')
+            ->willThrowException(new \PDOException('DB failure'));
+        $this->pdo->method('prepare')
+            ->willReturn($stmt);
+
+        $this->expectException(\PDOException::class);
+        $this->expectExceptionMessage('DB failure');
+
+        $this->adapter->{$method}(...$args);
+    }
+
+    public static function dataDbFailureThrowsException(): array
+    {
+        $config = new Config();
+        return [
+            'write' => ['write', ['/file.txt', '', $config]],
+            'writeStream' => ['writeStream', ['/file.txt', null, $config]],
+            'update' => ['update', ['/file.txt', 'Test Content', $config]],
+            'updateStream' => ['updateStream', ['/file.txt', 'Test Content', $config]],
+            'rename' => ['rename', ['/the-old-name.asp', '/the-new-name.php']],
+            'copy' => ['copy', ['/file.txt', '/copy.txt']],
+            'delete' => ['delete', ['/file.txt']],
+            'deleteDir' => ['deleteDir', ['/some-directory']],
+            'createDir' => ['createDir', ['/path', $config]],
+            'setVisibility' => ['setVisibility', ['/file.txt', AdapterInterface::VISIBILITY_PRIVATE]],
+            'has' => ['has', ['/file.txt']],
+            'read' => ['read', ['/file.txt']],
+            'readStream' => ['readStream', ['/file.txt']],
+            'listContents' => ['listContents', ['/path']],
+            'getMetadata' => ['getMetadata', ['/file.txt']],
+            'deleteExpired' => ['deleteExpired', []],
+        ];
+    }
+
+    public function testWriteWithDbFailureRemovesTempFile(): void
+    {
+        $tempDir = sys_get_temp_dir() . '/flysystempdo-test-' . bin2hex(random_bytes(4));
+        mkdir($tempDir);
+        $adapter = new PdoAdapter($this->pdo, new Config([
+            'temp_dir' => $tempDir,
+        ]));
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('execute')
+            ->willThrowException(new \PDOException('DB failure'));
+        $this->pdo->method('prepare')
+            ->willReturn($stmt);
+
+        try {
+            $adapter->write('/file.txt', 'Test Content', $this->emptyConfig);
+            static::fail('Expected exception was not thrown');
+        } catch (\PDOException) {
+            static::assertSame([], array_diff(scandir($tempDir), ['.', '..']));
+        } finally {
+            array_map(unlink(...), glob($tempDir . '/*'));
+            rmdir($tempDir);
+        }
+    }
+
     public function testTablePrefixDefault(): void
     {
         $default = 'flysystem';
         $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
+        $this->pdo->expects(static::atLeastOnce())
             ->method('prepare')
             ->with(static::stringContains($default))
             ->willReturn($stmt);
@@ -51,7 +141,7 @@ class PdoAdapterTest extends TestCase
             'table_prefix' => $prefix,
         ]);
         $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
+        $this->pdo->expects(static::atLeastOnce())
             ->method('prepare')
             ->with(static::stringContains($prefix))
             ->willReturn($stmt);
@@ -67,7 +157,7 @@ class PdoAdapterTest extends TestCase
             'table_prefix' => $prefix,
         ]);
         $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
+        $this->pdo->expects(static::atLeastOnce())
             ->method('prepare')
             ->with(static::stringContains($default))
             ->willReturn($stmt);
@@ -187,14 +277,6 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $actual);
     }
 
-    public function testWriteWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->write('/file.txt', '', $this->emptyConfig);
-        static::assertFalse($meta);
-    }
-
     public function testWriteDetectsMimetypeByExtension(): void
     {
         $this->setupBasicDbResponse();
@@ -254,14 +336,6 @@ class PdoAdapterTest extends TestCase
             'visibility' => 'public',
         ];
         static::assertSame($expected, $meta);
-    }
-
-    public function testWriteToStreamWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->writeStream('/file.txt', null, $this->emptyConfig);
-        static::assertFalse($meta);
     }
 
     public function testWriteToStreamDetectsMimetypeByExtension(): void
@@ -414,15 +488,6 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $actual);
     }
 
-    public function testUpdateWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->update('/some/path/to/file.txt', 'Test Content', $this->emptyConfig);
-
-        static::assertFalse($meta);
-    }
-
     public function testUpdateDetectsMimetypeByExtension(): void
     {
         $path = '/example.json';
@@ -492,15 +557,6 @@ class PdoAdapterTest extends TestCase
         static::assertSame(strlen($content), $meta['size']);
     }
 
-    public function testUpdateToStreamWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->updateStream('/some/path/to/file.txt', 'Test Content', $this->emptyConfig);
-
-        static::assertFalse($meta);
-    }
-
     public function testUpdateToStreamDetectsMimetypeByExtension(): void
     {
         $path = '/example.json';
@@ -564,13 +620,6 @@ class PdoAdapterTest extends TestCase
         static::assertTrue($actual);
     }
 
-    public function testRenameWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $actual = $this->adapter->rename('/the-old-name.asp', '/the-new-name.php');
-        static::assertFalse($actual);
-    }
-
     public function testRenameDirectory(): void
     {
         $path = '/the-old-name';
@@ -630,7 +679,9 @@ class PdoAdapterTest extends TestCase
     {
         $path = '/the-old-name.txt';
         $newpath = '/the-new-name.txt';
-        $this->setupBasicDbResponse(false);
+        $stmt = $this->setupBasicDbResponse();
+        $stmt->method('fetch')
+            ->willReturn(false);
 
         $actual = $this->adapter->copy($path, $newpath);
         static::assertFalse($actual);
@@ -651,12 +702,6 @@ class PdoAdapterTest extends TestCase
             'type' => 'dir',
             'path_id' => 123,
         ]);
-        static::assertFalse($this->adapter->delete('/some-file.txt'));
-    }
-
-    public function testDeleteWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
         static::assertFalse($this->adapter->delete('/some-file.txt'));
     }
 
@@ -715,12 +760,6 @@ class PdoAdapterTest extends TestCase
         static::assertFalse($this->adapter->deleteDir('/some-file.txt'));
     }
 
-    public function testDeleteDirWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        static::assertFalse($this->adapter->deleteDir('/some-directory'));
-    }
-
     public function testCreateDir(): void
     {
         $pathId = 12345;
@@ -751,13 +790,6 @@ class PdoAdapterTest extends TestCase
         static::assertSame($additional, $actual['meta']);
     }
 
-    public function testCreateDirWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter->createDir('/path', $this->emptyConfig);
-        static::assertFalse($meta);
-    }
-
     public function testSetVisibility(): void
     {
         $path = '/path/to/file.txt';
@@ -775,26 +807,12 @@ class PdoAdapterTest extends TestCase
         static::assertNotFalse($meta);
     }
 
-    public function testSetVisibilityWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->setVisibility('/path/to/file.txt', AdapterInterface::VISIBILITY_PRIVATE);
-        static::assertFalse($meta);
-    }
-
     public function testHas(): void
     {
         $stmt = $this->setupBasicDbResponse();
         $stmt->method('fetchColumn')
             ->willReturn(1);
         static::assertTrue($this->adapter->has('/this/path'));
-    }
-
-    public function testHasWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        static::assertFalse($this->adapter->has('/this/path'));
     }
 
     public function testRead(): void
@@ -908,13 +926,6 @@ class PdoAdapterTest extends TestCase
         static::assertArrayHasKey('contents', $meta);
     }
 
-    public function testReadWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter->read('/path/to/file.txt');
-        static::assertFalse($meta);
-    }
-
     public function testReadStreamReturnsStream(): void
     {
         $path = '/path/to/file.txt';
@@ -930,13 +941,6 @@ class PdoAdapterTest extends TestCase
         ]);
         $meta = $this->adapter->readStream($path);
         static::assertTrue(is_resource($meta['stream']));
-    }
-
-    public function testReadStreamWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter->readStream('/path/to/file.txt');
-        static::assertFalse($meta);
     }
 
     public function testListContents(): void
@@ -963,13 +967,6 @@ class PdoAdapterTest extends TestCase
     public function testListContentsWithEmtpyResults(): void
     {
         $this->setupDbFetchResponse([], 'fetchAll');
-        $listing = $this->adapter->listContents('/path');
-        static::assertEmpty($listing);
-    }
-
-    public function testListContentsWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
         $listing = $this->adapter->listContents('/path');
         static::assertEmpty($listing);
     }
@@ -1057,12 +1054,6 @@ class PdoAdapterTest extends TestCase
         $expectedKeys = ['path_id', 'type', 'path', 'timestamp', 'expiry', 'meta'];
         $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
         static::assertEmpty($unexpectedKeys);
-    }
-
-    public function testGetMetadataWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        static::assertFalse($this->adapter->getMetadata('/path'));
     }
 
     /**

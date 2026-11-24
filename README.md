@@ -26,6 +26,9 @@ $adapter    = new PdoAdapter($pdo);
 $filesystem = new Filesystem($adapter);
 ```
 
+The PDO connection must use the exception error mode, `\PDO::ERRMODE_EXCEPTION`, which is the default since PHP v8.0.
+Database errors are thrown as `\PDOException`.
+
 ### Configuration on `write` and `writeStream`
 
 ```php
