@@ -4,37 +4,118 @@ declare(strict_types=1);
 
 namespace Phlib\Flysystem\Pdo\Tests;
 
-use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
+use League\Flysystem\DirectoryAttributes;
+use League\Flysystem\FilesystemAdapter;
+use League\Flysystem\StorageAttributes;
+use League\Flysystem\UnableToCheckFileExistence;
+use League\Flysystem\UnableToCopyFile;
+use League\Flysystem\UnableToCreateDirectory;
+use League\Flysystem\UnableToDeleteDirectory;
+use League\Flysystem\UnableToDeleteFile;
+use League\Flysystem\UnableToMoveFile;
+use League\Flysystem\UnableToReadFile;
+use League\Flysystem\UnableToRetrieveMetadata;
+use League\Flysystem\UnableToSetVisibility;
+use League\Flysystem\UnableToWriteFile;
+use League\Flysystem\Visibility;
+use Phlib\Flysystem\Pdo\FileAttributes;
 use Phlib\Flysystem\Pdo\PdoAdapter;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * Unit tests using a stub DB connection.
+ *
+ * Each prepared statement is given the rows of the first registered response whose SQL fragment it contains, and
+ * every execution is recorded. Tests assert the outcome, and the SQL conditions and parameters which matter for the
+ * behaviour being tested (e.g. excluding expired files), rather than every query and the order they're run in.
+ * How the data is actually stored is verified by the integration tests.
+ */
 class PdoAdapterTest extends TestCase
 {
+    /**
+     * SQL fragments to identify each type of query, for registering responses and finding executions
+     */
+    private const SQL_LOOKUP = 'SELECT * FROM flysystem_path WHERE path = :path';
+
+    private const SQL_RAW_LOOKUP = 'AS is_expired';
+
+    private const SQL_EXISTS = 'SELECT 1 FROM flysystem_path';
+
+    private const SQL_LIST = 'ORDER BY path';
+
+    private const SQL_READ_CHUNKS = 'SELECT content FROM flysystem_chunk';
+
+    private const SQL_FIND_EXPIRED = 'SELECT path_id FROM flysystem_path WHERE expiry <= :now';
+
+    private const SQL_INSERT_PATH = 'INSERT INTO flysystem_path';
+
+    private const SQL_INSERT_CHUNK = 'INSERT INTO flysystem_chunk';
+
+    private const SQL_UPDATE_PATH = 'UPDATE flysystem_path';
+
+    private const SQL_MOVE = 'SET path = :destination';
+
+    private const SQL_DELETE_PATH = 'DELETE FROM flysystem_path';
+
+    private const SQL_DELETE_CHUNKS = 'DELETE FROM flysystem_chunk';
+
+    private const NOT_EXPIRED_CONDITION = '(expiry IS NULL OR expiry > :now)';
+
+    private const PATH = '/path/to/file.txt';
+
+    private const INSERT_ID = 1000;
+
     private PdoAdapter $adapter;
 
     private \PDO&MockObject $pdo;
 
-    private Config $emptyConfig;
+    /**
+     * @var list<array{match: string, rows: list<array>, fail: bool, rowCount: int}>
+     */
+    private array $responses = [];
+
+    /**
+     * @var list<array{sql: string, params: array}>
+     */
+    private array $executed = [];
+
+    private int $lastInsertId = self::INSERT_ID;
+
+    private ?string $driverName = null;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->emptyConfig = new Config();
+
         $this->pdo = $this->createMock(\PDO::class);
         $this->pdo->method('getAttribute')
-            ->willReturnCallback(fn(int $attribute) => match ($attribute) {
+            ->willReturnCallback(fn(int $attribute): mixed => match ($attribute) {
                 \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_DRIVER_NAME => $this->driverName,
                 default => null,
             });
+        $this->pdo->method('prepare')
+            ->willReturnCallback($this->prepare(...));
+        $this->pdo->method('lastInsertId')
+            ->willReturnCallback(fn(): string => (string) ++$this->lastInsertId);
+
         $this->adapter = new PdoAdapter($this->pdo);
     }
 
     public function testImplementsAdapterInterface(): void
     {
-        static::assertInstanceOf(AdapterInterface::class, $this->adapter);
+        static::assertInstanceOf(FilesystemAdapter::class, $this->adapter);
+    }
+
+    public static function dataRequiresExceptionErrorMode(): array
+    {
+        return [
+            'silent' => [\PDO::ERRMODE_SILENT],
+            'warning' => [\PDO::ERRMODE_WARNING],
+        ];
     }
 
     #[DataProvider('dataRequiresExceptionErrorMode')]
@@ -51,83 +132,9 @@ class PdoAdapterTest extends TestCase
         new PdoAdapter($pdo);
     }
 
-    public static function dataRequiresExceptionErrorMode(): array
-    {
-        return [
-            'silent' => [\PDO::ERRMODE_SILENT],
-            'warning' => [\PDO::ERRMODE_WARNING],
-        ];
-    }
-
-    #[DataProvider('dataDbFailureThrowsException')]
-    public function testDbFailureThrowsException(string $method, array $args): void
-    {
-        $stmt = $this->createMock(\PDOStatement::class);
-        $stmt->method('execute')
-            ->willThrowException(new \PDOException('DB failure'));
-        $this->pdo->method('prepare')
-            ->willReturn($stmt);
-
-        $this->expectException(\PDOException::class);
-        $this->expectExceptionMessage('DB failure');
-
-        $this->adapter->{$method}(...$args);
-    }
-
-    public static function dataDbFailureThrowsException(): array
-    {
-        $config = new Config();
-        return [
-            'write' => ['write', ['/file.txt', '', $config]],
-            'writeStream' => ['writeStream', ['/file.txt', null, $config]],
-            'update' => ['update', ['/file.txt', 'Test Content', $config]],
-            'updateStream' => ['updateStream', ['/file.txt', 'Test Content', $config]],
-            'rename' => ['rename', ['/the-old-name.asp', '/the-new-name.php']],
-            'copy' => ['copy', ['/file.txt', '/copy.txt']],
-            'delete' => ['delete', ['/file.txt']],
-            'deleteDir' => ['deleteDir', ['/some-directory']],
-            'createDir' => ['createDir', ['/path', $config]],
-            'setVisibility' => ['setVisibility', ['/file.txt', AdapterInterface::VISIBILITY_PRIVATE]],
-            'has' => ['has', ['/file.txt']],
-            'read' => ['read', ['/file.txt']],
-            'readStream' => ['readStream', ['/file.txt']],
-            'listContents' => ['listContents', ['/path']],
-            'getMetadata' => ['getMetadata', ['/file.txt']],
-            'deleteExpired' => ['deleteExpired', []],
-        ];
-    }
-
-    public function testWriteWithDbFailureRemovesTempFile(): void
-    {
-        $tempDir = sys_get_temp_dir() . '/flysystempdo-test-' . bin2hex(random_bytes(4));
-        mkdir($tempDir);
-        $adapter = new PdoAdapter($this->pdo, new Config([
-            'temp_dir' => $tempDir,
-        ]));
-
-        $stmt = $this->createMock(\PDOStatement::class);
-        $stmt->method('execute')
-            ->willThrowException(new \PDOException('DB failure'));
-        $this->pdo->method('prepare')
-            ->willReturn($stmt);
-
-        try {
-            $adapter->write('/file.txt', 'Test Content', $this->emptyConfig);
-            static::fail('Expected exception was not thrown');
-        } catch (\PDOException) {
-            static::assertSame([], array_diff(scandir($tempDir), ['.', '..']));
-        } finally {
-            array_map(unlink(...), glob($tempDir . '/*'));
-            rmdir($tempDir);
-        }
-    }
-
     public function testMysqlBufferingDisabledByDefault(): void
     {
-        $pdo = $this->createMock(\PDO::class);
-        $pdo->method('getAttribute')
-            ->with(\PDO::ATTR_ERRMODE)
-            ->willReturn(\PDO::ERRMODE_EXCEPTION);
+        $pdo = $this->createExceptionModePdo();
         $pdo->expects(static::once())
             ->method('setAttribute')
             ->with(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
@@ -137,10 +144,7 @@ class PdoAdapterTest extends TestCase
 
     public function testMysqlBufferingDisabledByDefaultWithOtherConfig(): void
     {
-        $pdo = $this->createMock(\PDO::class);
-        $pdo->method('getAttribute')
-            ->with(\PDO::ATTR_ERRMODE)
-            ->willReturn(\PDO::ERRMODE_EXCEPTION);
+        $pdo = $this->createExceptionModePdo();
         $pdo->expects(static::once())
             ->method('setAttribute')
             ->with(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
@@ -152,10 +156,7 @@ class PdoAdapterTest extends TestCase
 
     public function testMysqlBufferingNotDisabled(): void
     {
-        $pdo = $this->createMock(\PDO::class);
-        $pdo->method('getAttribute')
-            ->with(\PDO::ATTR_ERRMODE)
-            ->willReturn(\PDO::ERRMODE_EXCEPTION);
+        $pdo = $this->createExceptionModePdo();
         $pdo->expects(static::never())
             ->method('setAttribute');
 
@@ -164,1260 +165,1102 @@ class PdoAdapterTest extends TestCase
         ]));
     }
 
-    public function testTablePrefixDefault(): void
+    public static function dataTablePrefix(): array
     {
-        $default = 'flysystem';
-        $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::atLeastOnce())
-            ->method('prepare')
-            ->with(static::stringContains($default))
-            ->willReturn($stmt);
-
-        $this->adapter->write('somefile.txt', '', $this->emptyConfig);
-    }
-
-    public function testTablePrefixConfigurationIsHonored(): void
-    {
-        $prefix = 'myprefix';
-        $config = new Config([
-            'table_prefix' => $prefix,
-        ]);
-        $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::atLeastOnce())
-            ->method('prepare')
-            ->with(static::stringContains($prefix))
-            ->willReturn($stmt);
-
-        (new PdoAdapter($this->pdo, $config))->write('somefile.txt', '', $this->emptyConfig);
-    }
-
-    public function testTablePrefixConfigurationWithBlankValue(): void
-    {
-        $default = 'flysystem';
-        $prefix = '';
-        $config = new Config([
-            'table_prefix' => $prefix,
-        ]);
-        $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::atLeastOnce())
-            ->method('prepare')
-            ->with(static::stringContains($default))
-            ->willReturn($stmt);
-
-        (new PdoAdapter($this->pdo, $config))->write('somefile.txt', '', $this->emptyConfig);
-    }
-
-    public function testWrite(): void
-    {
-        $this->setupBasicDbResponse();
-
-        $pathId = rand(1, 1000);
-
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn((string) $pathId);
-
-        $path = '/some/path/to/file.txt';
-        $content = 'Test Content';
-        $meta = $this->adapter
-            ->write($path, $content, $this->emptyConfig);
-
-        $expected = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => $path,
-            'timestamp' => time(),
-            'mimetype' => 'text/plain',
-            'size' => strlen($content),
-            'visibility' => 'public',
+        return [
+            'default' => [[], 'flysystem'],
+            'configured' => [[
+                'table_prefix' => 'myprefix',
+            ], 'myprefix'],
+            'blank' => [[
+                'table_prefix' => ' ',
+            ], 'flysystem'],
         ];
-        static::assertSame($expected, $meta);
     }
 
-    public function testWriteWithExpiry(): void
+    #[DataProvider('dataTablePrefix')]
+    public function testTablePrefix(array $config, string $expectedPrefix): void
     {
-        $this->setupBasicDbResponse();
+        $adapter = new PdoAdapter($this->pdo, new Config($config));
 
-        $pathId = rand(1, 1000);
+        $adapter->fileExists(self::PATH);
+        $adapter->deleteDirectory('/path');
 
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn((string) $pathId);
-
-        $path = '/some/path/to/file.txt';
-        $content = 'Test Content';
-        $expiry = new \DateTimeImmutable('+2 day');
-        $expiryString = $expiry->format('Y-m-d H:i:s');
-        $config = new Config([
-            'expiry' => $expiry,
-        ]);
-
-        $actual = $this->adapter
-            ->write($path, $content, $config);
-
-        $expected = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => $path,
-            'timestamp' => time(),
-            'mimetype' => 'text/plain',
-            'size' => strlen($content),
-            'visibility' => 'public',
-            'expiry' => $expiryString,
-        ];
-
-        // Change DT object to a string, for comparison
-        $actual['expiry'] = $actual['expiry']->format('Y-m-d H:i:s');
-        static::assertSame($expected, $actual);
-    }
-
-    public function testWriteDeletesExpiredPath(): void
-    {
-        $path = '/path/to/file.txt';
-        $expiredPathId = 123;
-
-        $expiredStmt = $this->createMock(\PDOStatement::class);
-        $expiredStmt->expects(static::once())
-            ->method('execute')
-            ->with(static::callback(function (array $params) use ($path): bool {
-                static::assertSame($path, $params['path']);
-                static::assertNowParam($params['now']);
-                return true;
-            }))
-            ->willReturn(true);
-        $expiredStmt->method('fetch')
-            ->willReturn([
-                'path_id' => $expiredPathId,
-            ]);
-
-        $deleteStmt = $this->createMock(\PDOStatement::class);
-        $deleteStmt->expects(static::exactly(2))
-            ->method('execute')
-            ->with([
-                'path_id' => $expiredPathId,
-            ])
-            ->willReturn(true);
-
-        $otherStmt = $this->createMock(\PDOStatement::class);
-        $otherStmt->method('execute')
-            ->willReturn(true);
-
-        $prepared = [];
-        $this->pdo->method('prepare')
-            ->willReturnCallback(function (string $sql) use (&$prepared, $expiredStmt, $deleteStmt, $otherStmt) {
-                $prepared[] = $sql;
-                if (str_contains($sql, 'WHERE path = :path AND expiry <= :now')) {
-                    return $expiredStmt;
-                }
-                if (str_starts_with($sql, 'DELETE FROM')) {
-                    return $deleteStmt;
-                }
-                return $otherStmt;
-            });
-        $this->pdo->method('lastInsertId')
-            ->willReturn('456');
-
-        $this->adapter->write($path, 'Test Content', $this->emptyConfig);
-
-        // The expired file is deleted before the new file is inserted
-        static::assertStringStartsWith('SELECT path_id FROM flysystem_path', $prepared[0]);
-        static::assertStringStartsWith('DELETE FROM flysystem_path', $prepared[1]);
-        static::assertStringStartsWith('DELETE FROM flysystem_chunk', $prepared[2]);
-        static::assertStringStartsWith('INSERT INTO flysystem_path', $prepared[3]);
-    }
-
-    public function testWriteWithExpiryPast(): void
-    {
-        // An already-expired file is not stored
-        $this->pdo->expects(static::never())
-            ->method('prepare');
-
-        $config = new Config([
-            'expiry' => new \DateTimeImmutable('-2 day'),
-        ]);
-
-        static::assertFalse($this->adapter->write('/path/to/file.txt', 'Test Content', $config));
-    }
-
-    public function testWriteStreamWithExpiryPast(): void
-    {
-        // An already-expired file is not stored
-        $this->pdo->expects(static::never())
-            ->method('prepare');
-
-        $config = new Config([
-            'expiry' => new \DateTimeImmutable('-2 day'),
-        ]);
-
-        $actual = $this->adapter->writeStream('/path/to/file.txt', $this->createTempResource('Test Content'), $config);
-        static::assertFalse($actual);
-    }
-
-    public function testWriteWithAdditionalFields(): void
-    {
-        $this->setupBasicDbResponse();
-
-        $pathId = rand(1, 1000);
-
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn((string) $pathId);
-
-        $path = '/some/path/to/file.txt';
-        $content = 'Test Content';
-        $additional = [
-            uniqid('key1') => sha1(uniqid('value1')),
-            uniqid('key2') => sha1(uniqid('value2')),
-        ];
-        $config = new Config([
-            'meta' => $additional,
-        ]);
-
-        $actual = $this->adapter
-            ->write($path, $content, $config);
-
-        $expected = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => $path,
-            'timestamp' => time(),
-            'mimetype' => 'text/plain',
-            'size' => strlen($content),
-            'visibility' => 'public',
-            'meta' => $additional,
-        ];
-        static::assertSame($expected, $actual);
-    }
-
-    public function testWriteDetectsMimetypeByExtension(): void
-    {
-        $this->setupBasicDbResponse();
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn((string) rand(1, 1000));
-
-        $meta = $this->adapter
-            ->write(
-                '/example.json',
-                '',
-                $this->emptyConfig,
-            );
-
-        static::assertSame('application/json', $meta['mimetype']);
-    }
-
-    public function testWriteDetectsMimetypeByContent(): void
-    {
-        $this->setupBasicDbResponse();
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn((string) rand(1, 1000));
-
-        $meta = $this->adapter
-            ->write(
-                '/missing-extension',
-                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
-                $this->emptyConfig,
-            );
-
-        static::assertSame('image/gif', $meta['mimetype']);
-    }
-
-    public function testWriteToStream(): void
-    {
-        $this->setupBasicDbResponse();
-
-        $pathId = rand(1, 1000);
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn((string) $pathId);
-
-        $path = '/some/path/to/file.txt';
-        $content = 'Test File';
-        $handle = $this->createTempResource($content);
-        $meta = $this->adapter
-            ->writeStream($path, $handle, $this->emptyConfig);
-
-        $expected = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => $path,
-            'timestamp' => time(),
-            'mimetype' => 'text/plain',
-            'size' => strlen($content),
-            'visibility' => 'public',
-        ];
-        static::assertSame($expected, $meta);
-    }
-
-    public function testWriteToStreamDetectsMimetypeByExtension(): void
-    {
-        $this->setupBasicDbResponse();
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn((string) rand(1, 1000));
-
-        $handle = $this->createTempResource();
-        $meta = $this->adapter
-            ->writeStream(
-                '/example.json',
-                $handle,
-                $this->emptyConfig,
-            );
-
-        static::assertSame('application/json', $meta['mimetype']);
+        static::assertNotEmpty($this->executed);
+        foreach ($this->executed as $execution) {
+            static::assertMatchesRegularExpression("/ {$expectedPrefix}_(path|chunk)\\b/", $execution['sql']);
+        }
     }
 
     /**
-     * This test documents the intended behaviour. The adapter attempts at no point, when using streams,
-     * to load the file into memory.
+     * Every operation which looks up a path must exclude expired files in the query, so with no row returned the
+     * operation should behave as though the path does not exist
      */
-    public function testWriteToStreamFailsToDetectMimetypeByContent(): void
+    public static function dataLookupExcludesExpired(): array
     {
-        $this->setupBasicDbResponse();
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn((string) rand(1, 1000));
-
-        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
-        $handle = $this->createTempResource($content);
-        $meta = $this->adapter
-            ->writeStream(
-                '/missing-extension',
-                $handle,
-                $this->emptyConfig,
-            );
-
-        static::assertNotEquals('image/gif', $meta['mimetype']);
-    }
-
-    public function testUpdate(): void
-    {
-        $path = '/some/path/to/file.txt';
-        $content = 'Test Content';
-        $data = [
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => $path,
-            'mimetype' => 'text/plain',
-            'visibility' => 'public',
-            'size' => 214454,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ];
-
-        $this->setupDbFetchResponse($data);
-
-        $meta = $this->adapter
-            ->update($path, $content, $this->emptyConfig);
-
-        static::assertSame(strlen($content), $meta['size']);
-    }
-
-    public function testUpdateWithExpiry(): void
-    {
-        $pathId = rand(1, 1000);
-
-        $path = '/some/path/to/file.txt';
-        $content = 'Test Content';
-        $expiry = new \DateTimeImmutable('+2 day');
-        $expiryString = $expiry->format('Y-m-d H:i:s');
-        $config = new Config([
-            'expiry' => $expiry,
-        ]);
-
-        $data = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => $path,
-            'mimetype' => 'text/plain',
-            'visibility' => 'public',
-            'size' => 214454,
-            'is_compressed' => false,
-            // no expiry set
-            'update_ts' => date('Y-m-d H:i:s'),
-        ];
-
-        $this->setupDbFetchResponse($data);
-
-        $actual = $this->adapter
-            ->update($path, $content, $config);
-
-        $expected = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => $path,
-            'timestamp' => time(),
-            'mimetype' => 'text/plain',
-            'size' => strlen($content),
-            'visibility' => 'public',
-            'expiry' => $expiryString,
-        ];
-
-        // Change DT object to a string, for comparison
-        $actual['expiry'] = $actual['expiry']->format('Y-m-d H:i:s');
-        static::assertSame($expected, $actual);
-    }
-
-    public function testUpdateWithAdditionalFields(): void
-    {
-        $pathId = rand(1, 1000);
-
-        $path = '/some/path/to/file.txt';
-        $content = 'Test Content';
-        $additional = [
-            uniqid('key1') => sha1(uniqid('value1')),
-            uniqid('key2') => sha1(uniqid('value2')),
-        ];
-        $config = new Config([
-            'meta' => $additional,
-        ]);
-
-        $data = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => $path,
-            'mimetype' => 'text/plain',
-            'visibility' => 'public',
-            'size' => 214454,
-            'is_compressed' => false,
-            // no meta set
-            'update_ts' => date('Y-m-d H:i:s'),
-        ];
-
-        $this->setupDbFetchResponse($data);
-
-        $actual = $this->adapter
-            ->update($path, $content, $config);
-
-        $expected = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => $path,
-            'timestamp' => time(),
-            'mimetype' => 'text/plain',
-            'size' => strlen($content),
-            'visibility' => 'public',
-            'meta' => $additional,
-        ];
-        static::assertSame($expected, $actual);
-    }
-
-    public function testUpdateDetectsMimetypeByExtension(): void
-    {
-        $path = '/example.json';
-        $data = [
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => $path,
-            'mimetype' => 'text/plain',
-            'visibility' => 'public',
-            'size' => 214454,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ];
-
-        $this->setupDbFetchResponse($data);
-        $meta = $this->adapter
-            ->update($path, '', $this->emptyConfig);
-
-        static::assertSame('application/json', $meta['mimetype']);
-    }
-
-    public function testUpdateDetectsMimetypeByContent(): void
-    {
-        $path = '/missing-extension';
-        $data = [
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => $path,
-            'mimetype' => 'text/plain',
-            'visibility' => 'public',
-            'size' => 214454,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ];
-
-        $this->setupDbFetchResponse($data);
-        $meta = $this->adapter
-            ->update(
-                $path,
-                base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
-                $this->emptyConfig,
-            );
-
-        static::assertSame('image/gif', $meta['mimetype']);
-    }
-
-    public function testUpdateToStream(): void
-    {
-        $path = '/some/path/to/file.txt';
-        $content = 'Test Content';
-        $data = [
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => $path,
-            'mimetype' => 'text/plain',
-            'visibility' => 'public',
-            'size' => 214454,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ];
-
-        $this->setupDbFetchResponse($data);
-
-        $meta = $this->adapter
-            ->updateStream($path, $content, $this->emptyConfig);
-
-        static::assertSame(strlen($content), $meta['size']);
-    }
-
-    public function testUpdateToStreamDetectsMimetypeByExtension(): void
-    {
-        $path = '/example.json';
-        $data = [
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => $path,
-            'mimetype' => 'text/plain',
-            'visibility' => 'public',
-            'size' => 214454,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ];
-
-        $this->setupDbFetchResponse($data);
-        $handle = $this->createTempResource();
-        $meta = $this->adapter
-            ->updateStream($path, $handle, $this->emptyConfig);
-
-        static::assertSame('application/json', $meta['mimetype']);
-    }
-
-    public function testUpdateToStreamFailsToDetectsMimetypeByContent(): void
-    {
-        $path = '/missing-extension';
-        $data = [
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => $path,
-            'mimetype' => 'text/plain',
-            'visibility' => 'public',
-            'size' => 214454,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ];
-
-        $this->setupDbFetchResponse($data);
-        $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
-        $handle = $this->createTempResource($content);
-        $meta = $this->adapter
-            ->updateStream($path, $handle, $this->emptyConfig);
-
-        static::assertNotEquals('image/gif', $meta['mimetype']);
-    }
-
-    public function testRenameFile(): void
-    {
-        $path = '/the-old-name.asp';
-        $newName = '/the-new-name.php';
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'path' => $path,
-            'type' => 'file',
-            'visibility' => 'public',
-            'size' => 2341,
-            'update_ts' => date('Y-m-d H:i:s'),
-            'mimetype' => 'text/plain',
-        ]);
-
-        $actual = $this->adapter->rename($path, $newName);
-        static::assertTrue($actual);
-    }
-
-    public function testRenameDirectory(): void
-    {
-        $path = '/the-old-name';
-        $newName = '/the-new-name';
-        $this->setupDbMultiCall([
-            [
-                'method' => 'fetch',
-                'response' => [
-                    'path_id' => 123,
-                    'path' => $path,
-                    'type' => 'dir',
-                    'update_ts' => date('Y-m-d H:i:s'),
-                ],
-            ], [
-                'method' => 'fetchAll',
-                'response' => [
-                    [
-                        'path_id' => 1234,
-                        'path' => $path . '/somefile.txt',
-                        'type' => 'file',
-                        'visibility' => 'public',
-                        'size' => 2341,
-                        'update_ts' => date('Y-m-d H:i:s'),
-                        'mimetype' => 'text/plain',
-                    ],
-                ],
+        $config = new Config();
+        return [
+            'fileExists' => [
+                fn(PdoAdapter $adapter) => $adapter->fileExists(self::PATH),
+                null,
             ],
+            'read' => [
+                fn(PdoAdapter $adapter) => $adapter->read(self::PATH),
+                UnableToReadFile::class,
+            ],
+            'readStream' => [
+                fn(PdoAdapter $adapter) => $adapter->readStream(self::PATH),
+                UnableToReadFile::class,
+            ],
+            'fileSize' => [
+                fn(PdoAdapter $adapter) => $adapter->fileSize(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'mimeType' => [
+                fn(PdoAdapter $adapter) => $adapter->mimeType(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'lastModified' => [
+                fn(PdoAdapter $adapter) => $adapter->lastModified(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'visibility' => [
+                fn(PdoAdapter $adapter) => $adapter->visibility(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'expiry' => [
+                fn(PdoAdapter $adapter) => $adapter->expiry(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'extra' => [
+                fn(PdoAdapter $adapter) => $adapter->extra(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'delete' => [
+                fn(PdoAdapter $adapter) => $adapter->delete(self::PATH),
+                null,
+            ],
+            'copy' => [
+                fn(PdoAdapter $adapter) => $adapter->copy(self::PATH, '/destination.txt', $config),
+                UnableToCopyFile::class,
+            ],
+        ];
+    }
+
+    #[DataProvider('dataLookupExcludesExpired')]
+    public function testLookupExcludesExpired(\Closure $operation, ?string $expectedException): void
+    {
+        try {
+            $operation($this->adapter);
+            if ($expectedException !== null) {
+                static::fail("Expected {$expectedException} to be thrown");
+            }
+        } catch (\Exception $e) {
+            if ($expectedException === null || !$e instanceof $expectedException) {
+                throw $e;
+            }
+        }
+
+        // The first query looks up the path, excluding expired files
+        static::assertNotEmpty($this->executed);
+        $lookup = $this->executed[0];
+        static::assertStringContainsString('WHERE path = :path', $lookup['sql']);
+        static::assertSame(self::PATH, $lookup['params']['path']);
+        static::assertExcludesExpired($lookup);
+
+        // Nothing is changed
+        $this->assertNotExecuted(self::SQL_INSERT_PATH);
+        $this->assertNotExecuted(self::SQL_UPDATE_PATH);
+        $this->assertNotExecuted(self::SQL_DELETE_PATH);
+    }
+
+    public function testFileExists(): void
+    {
+        $this->respond(self::SQL_EXISTS, [[
+            '1' => 1,
+        ]]);
+
+        static::assertTrue($this->adapter->fileExists(self::PATH));
+
+        $exists = $this->executedOnce(self::SQL_EXISTS);
+        static::assertExcludesExpired($exists);
+        static::assertParams([
+            'path' => self::PATH,
+            'type' => 'file',
+        ], $exists['params'], ['now']);
+    }
+
+    /**
+     * A DB error in any operation is thrown as the Flysystem exception for that operation
+     */
+    public static function dataDbFailure(): array
+    {
+        $config = new Config();
+        return [
+            'fileExists' => [
+                fn(PdoAdapter $adapter) => $adapter->fileExists(self::PATH),
+                UnableToCheckFileExistence::class,
+            ],
+            'write' => [
+                fn(PdoAdapter $adapter) => $adapter->write(self::PATH, 'Content', $config),
+                UnableToWriteFile::class,
+            ],
+            'writeStream' => [
+                fn(PdoAdapter $adapter) => $adapter->writeStream(self::PATH, fopen('data://text/plain,Content', 'rb'), $config),
+                UnableToWriteFile::class,
+            ],
+            'read' => [
+                fn(PdoAdapter $adapter) => $adapter->read(self::PATH),
+                UnableToReadFile::class,
+            ],
+            'readStream' => [
+                fn(PdoAdapter $adapter) => $adapter->readStream(self::PATH),
+                UnableToReadFile::class,
+            ],
+            'move' => [
+                fn(PdoAdapter $adapter) => $adapter->move(self::PATH, '/destination.txt', $config),
+                UnableToMoveFile::class,
+            ],
+            'copy' => [
+                fn(PdoAdapter $adapter) => $adapter->copy(self::PATH, '/destination.txt', $config),
+                UnableToCopyFile::class,
+            ],
+            'delete' => [
+                fn(PdoAdapter $adapter) => $adapter->delete(self::PATH),
+                UnableToDeleteFile::class,
+            ],
+            'deleteDirectory' => [
+                fn(PdoAdapter $adapter) => $adapter->deleteDirectory('/path/to'),
+                UnableToDeleteDirectory::class,
+            ],
+            'createDirectory' => [
+                fn(PdoAdapter $adapter) => $adapter->createDirectory('/path/to', $config),
+                UnableToCreateDirectory::class,
+            ],
+            'setVisibility' => [
+                fn(PdoAdapter $adapter) => $adapter->setVisibility(self::PATH, Visibility::PRIVATE),
+                UnableToSetVisibility::class,
+            ],
+            'fileSize' => [
+                fn(PdoAdapter $adapter) => $adapter->fileSize(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'mimeType' => [
+                fn(PdoAdapter $adapter) => $adapter->mimeType(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'lastModified' => [
+                fn(PdoAdapter $adapter) => $adapter->lastModified(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'visibility' => [
+                fn(PdoAdapter $adapter) => $adapter->visibility(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'expiry' => [
+                fn(PdoAdapter $adapter) => $adapter->expiry(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+            'extra' => [
+                fn(PdoAdapter $adapter) => $adapter->extra(self::PATH),
+                UnableToRetrieveMetadata::class,
+            ],
+        ];
+    }
+
+    #[DataProvider('dataDbFailure')]
+    public function testDbFailure(\Closure $operation, string $expectedException): void
+    {
+        // Every statement fails
+        $this->respond('', fail: true);
+
+        $this->assertDbFailure($expectedException, fn() => $operation($this->adapter));
+    }
+
+    public static function dataRead(): array
+    {
+        $content = str_repeat('Test content ', 100);
+        return [
+            'uncompressed' => [false, [substr($content, 0, 600), substr($content, 600)], $content],
+            'compressed' => [true, str_split(gzdeflate($content), 20), $content],
+        ];
+    }
+
+    #[DataProvider('dataRead')]
+    public function testRead(bool $isCompressed, array $chunks, string $expected): void
+    {
+        $this->givenFile([
+            'is_compressed' => (int) $isCompressed,
+        ]);
+        $this->respond(self::SQL_READ_CHUNKS, array_map(fn(string $chunk): array => [
+            'content' => $chunk,
+        ], $chunks));
+
+        static::assertSame($expected, $this->adapter->read(self::PATH));
+
+        $stream = $this->adapter->readStream(self::PATH);
+        static::assertSame($expected, stream_get_contents($stream));
+        fclose($stream);
+
+        // Chunks are read in order for the file
+        $readChunks = $this->executed(self::SQL_READ_CHUNKS);
+        foreach ($readChunks as $execution) {
+            static::assertStringContainsString('ORDER BY chunk_no', $execution['sql']);
+            static::assertSame([
+                'path_id' => 123,
+            ], $execution['params']);
+        }
+    }
+
+    public function testWriteNewFile(): void
+    {
+        $content = 'Test Content';
+
+        $this->adapter->write(self::PATH, $content, new Config());
+
+        $insert = $this->executedOnce(self::SQL_INSERT_PATH);
+        static::assertParams([
+            'type' => 'file',
+            'path' => self::PATH,
+            'visibility' => Visibility::PUBLIC,
+            'mimetype' => 'text/plain',
+            'size' => strlen($content),
+            'is_compressed' => 1,
+        ], $insert['params']);
+
+        // Compressed by default
+        static::assertSame($content, gzinflate($this->writtenContent(self::INSERT_ID + 1)));
+        $this->assertNotExecuted(self::SQL_UPDATE_PATH);
+    }
+
+    public function testWriteStreamNewFile(): void
+    {
+        $content = 'Test Content';
+        $stream = fopen('php://temp', 'w+b');
+        fwrite($stream, $content);
+        rewind($stream);
+
+        $this->adapter->writeStream(self::PATH, $stream, new Config());
+        fclose($stream);
+
+        $insert = $this->executedOnce(self::SQL_INSERT_PATH);
+        static::assertSame(strlen($content), $insert['params']['size']);
+        static::assertSame($content, gzinflate($this->writtenContent(self::INSERT_ID + 1)));
+    }
+
+    public function testWriteWithoutCompression(): void
+    {
+        $content = 'Test Content';
+
+        $this->adapter->write(self::PATH, $content, new Config([
+            'enable_compression' => false,
+        ]));
+
+        static::assertSame(0, $this->executedOnce(self::SQL_INSERT_PATH)['params']['is_compressed']);
+        static::assertSame($content, $this->writtenContent(self::INSERT_ID + 1));
+    }
+
+    public function testWriteWithConfig(): void
+    {
+        $expiry = new \DateTimeImmutable('+2 days');
+        $meta = [
+            'owner' => 'example',
+        ];
+
+        $this->adapter->write(self::PATH, 'Test Content', new Config([
+            'visibility' => Visibility::PRIVATE,
+            'expiry' => $expiry,
+            'meta' => $meta,
+        ]));
+
+        $params = $this->executedOnce(self::SQL_INSERT_PATH)['params'];
+        static::assertSame(Visibility::PRIVATE, $params['visibility']);
+        static::assertSame($expiry->format('Y-m-d H:i:s'), $params['expiry']);
+        static::assertSame(json_encode($meta), $params['meta']);
+    }
+
+    public static function dataWriteDetectsMimeType(): array
+    {
+        $gif = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
+        return [
+            'by extension' => ['/path/to/file.json', '', 'application/json'],
+            'by content' => ['/path/to/file', $gif, 'image/gif'],
+            'unknown' => ['/path/to/file.unknown', '', 'text/plain'],
+        ];
+    }
+
+    #[DataProvider('dataWriteDetectsMimeType')]
+    public function testWriteDetectsMimeType(string $path, string $content, ?string $expected): void
+    {
+        $this->adapter->write($path, $content, new Config());
+
+        static::assertSame($expected, $this->executedOnce(self::SQL_INSERT_PATH)['params']['mimetype']);
+    }
+
+    public function testWriteLooksUpPathIncludingExpired(): void
+    {
+        $this->adapter->write(self::PATH, 'Test Content', new Config());
+
+        // The lookup must find an expired file, as its path has to be reused, and the expiry is checked in the query
+        $lookup = $this->executedOnce(self::SQL_RAW_LOOKUP);
+        static::assertStringContainsString('NOT ' . self::NOT_EXPIRED_CONDITION . ' AS is_expired', $lookup['sql']);
+        static::assertStringNotContainsString('AND ' . self::NOT_EXPIRED_CONDITION, $lookup['sql']);
+        static::assertSame(self::PATH, $lookup['params']['path']);
+        static::assertNowParam($lookup['params']['now']);
+    }
+
+    public function testWriteUpdatesExistingFile(): void
+    {
+        $content = 'New Content';
+        $this->respond(self::SQL_RAW_LOOKUP, [[
+            'path_id' => 123,
+            'type' => 'file',
+            'is_compressed' => 0,
+            'is_expired' => 0,
+        ]]);
+
+        // Compression is enabled by config, but the stored setting is used for an existing file
+        $this->adapter->write(self::PATH, $content, new Config([
+            'enable_compression' => true,
+        ]));
+
+        $this->assertNotExecuted(self::SQL_INSERT_PATH);
+        $update = $this->executedOnce(self::SQL_UPDATE_PATH);
+        static::assertStringContainsString('WHERE path_id = :path_id', $update['sql']);
+        static::assertParams([
+            'mimetype' => 'text/plain',
+            'size' => strlen($content),
+            'path_id' => 123,
+        ], $update['params']);
+
+        // The previous content is replaced
+        static::assertSame([
+            'path_id' => 123,
+        ], $this->executedOnce(self::SQL_DELETE_CHUNKS)['params']);
+        $this->assertExecutedBefore(self::SQL_DELETE_CHUNKS, self::SQL_INSERT_CHUNK);
+        static::assertSame($content, $this->writtenContent(123));
+    }
+
+    public function testWriteUpdatesExistingFileWithConfig(): void
+    {
+        $expiry = new \DateTimeImmutable('+2 days');
+        $meta = [
+            'owner' => 'example',
+        ];
+        $this->givenRawFile();
+
+        $this->adapter->write(self::PATH, 'New Content', new Config([
+            'expiry' => $expiry,
+            'meta' => $meta,
+        ]));
+
+        $params = $this->executedOnce(self::SQL_UPDATE_PATH)['params'];
+        static::assertSame($expiry->format('Y-m-d H:i:s'), $params['expiry']);
+        static::assertSame(json_encode($meta), $params['meta']);
+    }
+
+    public function testWriteReplacesExpiredFile(): void
+    {
+        $this->givenRawFile([
+            'is_expired' => 1,
         ]);
 
-        $actual = $this->adapter->rename($path, $newName);
-        static::assertTrue($actual);
+        $this->adapter->write(self::PATH, 'New Content', new Config());
+
+        // The expired file is deleted, then the new file inserted, rather than updating the expired file
+        $this->assertNotExecuted(self::SQL_UPDATE_PATH);
+        $this->assertDeleted(123);
+        $this->assertExecutedBefore(self::SQL_DELETE_PATH, self::SQL_INSERT_PATH);
+        static::assertSame(self::PATH, $this->executedOnce(self::SQL_INSERT_PATH)['params']['path']);
+    }
+
+    public function testWriteToDirectory(): void
+    {
+        $this->givenRawFile([
+            'type' => 'dir',
+        ]);
+
+        try {
+            $this->adapter->write(self::PATH, 'Content', new Config());
+            static::fail('Expected exception to be thrown');
+        } catch (UnableToWriteFile) {
+        }
+
+        $this->assertNotExecuted(self::SQL_INSERT_PATH);
+        $this->assertNotExecuted(self::SQL_UPDATE_PATH);
+    }
+
+    public function testWriteWithExpiryInPast(): void
+    {
+        // An existing file is deleted, as writing it again would make it immediately expire
+        $this->givenFile();
+
+        $this->adapter->write(self::PATH, 'Content', new Config([
+            'expiry' => new \DateTimeImmutable('-2 days'),
+        ]));
+
+        $this->assertNotExecuted(self::SQL_INSERT_PATH);
+        $this->assertNotExecuted(self::SQL_UPDATE_PATH);
+        $this->assertNotExecuted(self::SQL_INSERT_CHUNK);
+        $this->assertDeleted(123);
+    }
+
+    public function testWriteWithDbFailureRemovesTempFile(): void
+    {
+        $tempDir = sys_get_temp_dir() . '/flysystempdo-test-' . bin2hex(random_bytes(4));
+        mkdir($tempDir);
+        $adapter = new PdoAdapter($this->pdo, new Config([
+            'temp_dir' => $tempDir,
+        ]));
+        $this->respond(self::SQL_INSERT_PATH, fail: true);
+
+        try {
+            $adapter->write(self::PATH, 'Content', new Config());
+            static::fail('Expected exception was not thrown');
+        } catch (UnableToWriteFile) {
+            static::assertSame([], array_diff(scandir($tempDir), ['.', '..']));
+        } finally {
+            array_map(unlink(...), glob($tempDir . '/*'));
+            rmdir($tempDir);
+        }
+    }
+
+    public function testUpdateWithDbFailure(): void
+    {
+        $this->givenRawFile();
+        $this->respond(self::SQL_UPDATE_PATH, fail: true);
+
+        $this->assertDbFailure(
+            UnableToWriteFile::class,
+            fn() => $this->adapter->write(self::PATH, 'Content', new Config()),
+        );
+    }
+
+    public function testMove(): void
+    {
+        $this->respond(self::SQL_MOVE, rowCount: 1);
+
+        $this->adapter->move(self::PATH, '/destination.txt', new Config());
+
+        $move = $this->executedOnce(self::SQL_MOVE);
+        static::assertExcludesExpired($move);
+        static::assertParams([
+            'destination' => '/destination.txt',
+            'source' => self::PATH,
+            'type' => 'file',
+        ], $move['params'], ['now']);
+    }
+
+    public function testMoveNonExistentOrExpiredFile(): void
+    {
+        // No row is updated, as the file does not exist or has expired
+        $this->respond(self::SQL_MOVE, rowCount: 0);
+
+        $this->expectException(UnableToMoveFile::class);
+        $this->adapter->move(self::PATH, '/destination.txt', new Config());
+    }
+
+    public function testMoveReplacesExpiredDestination(): void
+    {
+        $this->givenRawFile([
+            'is_expired' => 1,
+        ]);
+        $this->respond(self::SQL_MOVE, rowCount: 1);
+
+        $this->adapter->move('/source.txt', self::PATH, new Config());
+
+        static::assertSame(self::PATH, $this->executedOnce(self::SQL_RAW_LOOKUP)['params']['path']);
+        $this->assertDeleted(123);
+        $this->assertExecutedBefore(self::SQL_DELETE_PATH, self::SQL_MOVE);
+    }
+
+    public function testMoveDoesNotReplaceLiveDestination(): void
+    {
+        $this->givenRawFile();
+        $this->respond(self::SQL_MOVE, rowCount: 1);
+
+        $this->adapter->move('/source.txt', self::PATH, new Config());
+
+        $this->assertNotExecuted(self::SQL_DELETE_PATH);
+    }
+
+    public function testMoveToSamePath(): void
+    {
+        $this->respond(self::SQL_EXISTS, [[
+            '1' => 1,
+        ]]);
+
+        $this->adapter->move(self::PATH, self::PATH, new Config());
+
+        static::assertExcludesExpired($this->executedOnce(self::SQL_EXISTS));
+        $this->assertNotExecuted(self::SQL_MOVE);
+    }
+
+    public function testMoveNonExistentFileToSamePath(): void
+    {
+        $this->expectException(UnableToMoveFile::class);
+        $this->adapter->move(self::PATH, self::PATH, new Config());
     }
 
     public function testCopy(): void
     {
-        $path = '/the-old-name.txt';
-        $newpath = '/the-new-name.txt';
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'path' => $path,
-            'type' => 'file',
-            'mimetype' => 'text/plain',
-            'visibility' => 'public',
-            'size' => 2341,
+        $content = 'Test Content';
+        $this->givenFile([
+            'visibility' => Visibility::PRIVATE,
+            'mimetype' => 'text/csv',
+            'size' => strlen($content),
             'is_compressed' => 1,
-            'update_ts' => date('Y-m-d H:i:s'),
         ]);
-        $this->pdo->expects(static::once())
-            ->method('lastInsertId')
-            ->willReturn((string) rand(1, 1000));
+        $this->respond(self::SQL_READ_CHUNKS, [[
+            'content' => gzdeflate($content),
+        ]]);
 
-        $actual = $this->adapter->copy($path, $newpath);
-        static::assertTrue($actual);
+        $this->adapter->copy(self::PATH, '/destination.txt', new Config());
+
+        static::assertParams([
+            'type' => 'file',
+            'path' => '/destination.txt',
+            'visibility' => Visibility::PRIVATE,
+            'mimetype' => 'text/csv',
+            'size' => strlen($content),
+            'is_compressed' => 1,
+        ], $this->executedOnce(self::SQL_INSERT_PATH)['params']);
+        static::assertSame($content, gzinflate($this->writtenContent(self::INSERT_ID + 1)));
+        $this->assertNotExecuted(self::SQL_DELETE_PATH);
     }
 
-    public function testCopyFailsToFindPath(): void
+    public static function dataCopyReplacesDestination(): array
     {
-        $path = '/the-old-name.txt';
-        $newpath = '/the-new-name.txt';
-        $stmt = $this->setupBasicDbResponse();
-        $stmt->method('fetch')
-            ->willReturn(false);
+        return [
+            'expired file' => ['file', 1],
+            'expired directory' => ['dir', 1],
+        ];
+    }
 
-        $actual = $this->adapter->copy($path, $newpath);
-        static::assertFalse($actual);
+    #[DataProvider('dataCopyReplacesDestination')]
+    public function testCopyReplacesDestination(string $type, int $isExpired): void
+    {
+        $this->givenFile();
+        $this->givenRawFile([
+            'path_id' => 456,
+            'type' => $type,
+            'is_expired' => $isExpired,
+        ]);
+
+        $this->adapter->copy(self::PATH, '/destination.txt', new Config());
+
+        static::assertSame('/destination.txt', $this->executedOnce(self::SQL_RAW_LOOKUP)['params']['path']);
+        $this->assertDeleted(456);
+        $this->assertExecutedBefore(self::SQL_DELETE_PATH, self::SQL_INSERT_PATH);
     }
 
     public function testDelete(): void
     {
-        $this->setupDbFetchResponse([
-            'type' => 'file',
-            'path_id' => 123,
-        ]);
-        static::assertTrue($this->adapter->delete('/some-file.txt'));
+        $this->givenFile();
+
+        $this->adapter->delete(self::PATH);
+
+        $this->assertDeleted(123);
     }
 
-    public function testDeleteWithNonFilePath(): void
+    public function testDeleteDirectoryPath(): void
     {
-        $this->setupDbFetchResponse([
+        $this->givenFile([
             'type' => 'dir',
-            'path_id' => 123,
         ]);
-        static::assertFalse($this->adapter->delete('/some-file.txt'));
+
+        $this->adapter->delete(self::PATH);
+
+        $this->assertNotExecuted(self::SQL_DELETE_PATH);
+        $this->assertNotExecuted(self::SQL_DELETE_CHUNKS);
     }
 
-    public function testDeleteEmptyDirectory(): void
+    public static function dataDeleteDirectory(): array
     {
-        $this->setupDbMultiCall([
-            [
-                'method' => 'fetch',
-                'response' => [
-                    'type' => 'dir',
-                    'path_id' => 123,
-                ],
-            ], [
-                'method' => 'fetchAll',
-                'response' => [],
-            ],
-        ]);
-        static::assertTrue($this->adapter->deleteDir('/some-directory'));
-    }
-
-    public function testDeleteDirectoryWithChildren(): void
-    {
-        $this->setupDbMultiCall([
-            [
-                'method' => 'fetch',
-                'response' => [
-                    'type' => 'dir',
-                    'path_id' => 123,
-                    'path' => '/path/to',
-                    'update_ts' => date('Y-m-d H:i:s'),
-                ],
-            ], [
-                'method' => 'fetchAll',
-                'response' => [
-                    [
-                        'type' => 'file',
-                        'path_id' => 321,
-                        'path' => '/path/to/file.txt',
-                        'mimetype' => 'text/plain',
-                        'visibility' => 'public',
-                        'size' => 1234,
-                        'update_ts' => date('Y-m-d H:i:s'),
-                    ],
-                ],
-            ],
-        ]);
-        static::assertTrue($this->adapter->deleteDir('/some-directory'));
-    }
-
-    public function testDeleteDirWithNonDirectoryPath(): void
-    {
-        $this->setupDbFetchResponse([
-            'type' => 'file',
-            'path_id' => 123,
-        ]);
-        static::assertFalse($this->adapter->deleteDir('/some-file.txt'));
-    }
-
-    public function testCreateDir(): void
-    {
-        $pathId = 12345;
-        $stmt = $this->setupBasicDbResponse();
-        // The directory does not already exist
-        $stmt->method('fetch')
-            ->willReturn(false);
-        $this->pdo->method('lastInsertId')
-            ->willReturn((string) $pathId);
-
-        $meta = $this->adapter->createDir('/path', $this->emptyConfig);
-        static::assertSame($pathId, $meta['path_id']);
-    }
-
-    public function testCreateDirWithAdditionalFields(): void
-    {
-        $pathId = 12345;
-        $stmt = $this->setupBasicDbResponse();
-        // The directory does not already exist
-        $stmt->method('fetch')
-            ->willReturn(false);
-        $this->pdo->method('lastInsertId')
-            ->willReturn((string) $pathId);
-
-        $additional = [
-            uniqid('key1') => sha1(uniqid('value1')),
-            uniqid('key2') => sha1(uniqid('value2')),
+        return [
+            'path' => ['/path/to'],
+            'trailing separator' => ['/path/to/'],
         ];
-        $actual = $this->adapter->createDir('/path', new Config([
-            'meta' => $additional,
+    }
+
+    #[DataProvider('dataDeleteDirectory')]
+    public function testDeleteDirectory(string $path): void
+    {
+        // Registered before the directory entry, as the lookup has the same start
+        $this->respond('WHERE path = :path OR', [
+            $this->row('/path/to', [
+                'path_id' => 123,
+                'type' => 'dir',
+            ]),
+            $this->row('/path/to/file.txt', [
+                'path_id' => 456,
+            ]),
+        ]);
+        $this->givenFile([
+            'path' => '/path/to',
+            'type' => 'dir',
+        ]);
+
+        $this->adapter->deleteDirectory($path);
+
+        // The directory and all descendants are found, including any which are expired
+        $select = $this->executedOnce('WHERE path = :path OR');
+        static::assertStringContainsString('(path >= :descendant_from AND path < :descendant_to)', $select['sql']);
+        static::assertStringNotContainsString('expiry', $select['sql']);
+        static::assertParams([
+            'path' => '/path/to',
+            'descendant_from' => '/path/to/',
+            'descendant_to' => '/path/to0',
+        ], $select['params']);
+
+        // Each is deleted, along with the chunks for files
+        $this->assertDeleted(456);
+        static::assertCount(1, array_filter(
+            $this->executed(self::SQL_DELETE_PATH),
+            fn(array $execution): bool => $execution['params']['path_id'] === 123,
+        ));
+    }
+
+    public function testCreateDirectory(): void
+    {
+        $meta = [
+            'owner' => 'example',
+        ];
+
+        $this->adapter->createDirectory('/path/to', new Config([
+            'meta' => $meta,
         ]));
 
-        static::assertArrayHasKey('meta', $actual);
-        static::assertSame($additional, $actual['meta']);
+        $insert = $this->executedOnce(self::SQL_INSERT_PATH);
+        static::assertSame('dir', $insert['params']['type']);
+        static::assertSame('/path/to', $insert['params']['path']);
+        static::assertSame(json_encode($meta), $insert['params']['meta']);
+        $this->assertNotExecuted(self::SQL_INSERT_CHUNK);
     }
 
-    public function testCreateDirWhichExists(): void
+    public function testCreateDirectoryWhichExists(): void
     {
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
+        $this->givenFile([
             'type' => 'dir',
-            'path' => '/path',
-            'update_ts' => date('Y-m-d H:i:s'),
         ]);
-        $this->pdo->expects(static::never())
-            ->method('lastInsertId');
 
-        $meta = $this->adapter->createDir('/path', $this->emptyConfig);
-        static::assertSame(123, $meta['path_id']);
+        $this->adapter->createDirectory(self::PATH, new Config());
+
+        static::assertExcludesExpired($this->executedOnce(self::SQL_LOOKUP));
+        $this->assertNotExecuted(self::SQL_INSERT_PATH);
     }
 
-    public function testCreateDirWhereFileExists(): void
+    public function testCreateDirectoryWhereFileExists(): void
     {
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => '/path',
-            'update_ts' => date('Y-m-d H:i:s'),
-        ]);
-        $this->pdo->expects(static::never())
-            ->method('lastInsertId');
+        $this->givenFile();
 
-        static::assertFalse($this->adapter->createDir('/path', $this->emptyConfig));
+        try {
+            $this->adapter->createDirectory(self::PATH, new Config());
+            static::fail('Expected exception to be thrown');
+        } catch (UnableToCreateDirectory) {
+        }
+
+        $this->assertNotExecuted(self::SQL_INSERT_PATH);
+    }
+
+    public function testCreateDirectoryReplacesExpiredFile(): void
+    {
+        $this->givenRawFile([
+            'is_expired' => 1,
+        ]);
+
+        $this->adapter->createDirectory(self::PATH, new Config());
+
+        $this->assertDeleted(123);
+        $this->assertExecutedBefore(self::SQL_DELETE_PATH, self::SQL_INSERT_PATH);
     }
 
     public function testSetVisibility(): void
     {
-        $path = '/path/to/file.txt';
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'path' => $path,
-            'type' => 'file',
-            'mimetype' => 'text/plain',
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'size' => 1234,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ]);
-        $meta = $this->adapter
-            ->setVisibility('/path/to/file.txt', AdapterInterface::VISIBILITY_PRIVATE);
-        static::assertNotFalse($meta);
+        $this->adapter->setVisibility(self::PATH, Visibility::PRIVATE);
+
+        static::assertParams([
+            'visibility' => Visibility::PRIVATE,
+            'path' => self::PATH,
+        ], $this->executedOnce(self::SQL_UPDATE_PATH)['params']);
     }
 
-    public function testHas(): void
+    public function testMetadata(): void
     {
-        $stmt = $this->setupBasicDbResponse();
-        $stmt->method('fetchColumn')
-            ->willReturn(1);
-        static::assertTrue($this->adapter->has('/this/path'));
-    }
-
-    public function testHasExcludesExpired(): void
-    {
-        $path = '/this/path';
-
-        $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
-            ->method('prepare')
-            ->with(static::stringContains('WHERE path = :path AND (expiry IS NULL OR expiry > :now)'))
-            ->willReturn($stmt);
-
-        $stmt->expects(static::once())
-            ->method('execute')
-            ->with(static::callback(function (array $params) use ($path): bool {
-                static::assertSame($path, $params['path']);
-                static::assertNowParam($params['now']);
-                return true;
-            }))
-            ->willReturn(true);
-
-        // An expired row is excluded by the DB query
-        $stmt->expects(static::once())
-            ->method('fetchColumn')
-            ->willReturn(false);
-
-        static::assertFalse($this->adapter->has($path));
-    }
-
-    public function testRead(): void
-    {
-        $pathId = rand(1, 1000);
-        $size = rand(1000, 99999);
-        $path = '/path/to/file.txt';
-        $updateTs = date('Y-m-d H:i:s');
-
-        $this->setupDbFetchResponse([
-            'path_id' => $pathId,
-            'path' => $path,
-            'type' => 'file',
-            'mimetype' => 'text/plain',
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'size' => $size,
-            'is_compressed' => false,
-            'update_ts' => $updateTs,
-        ]);
-
-        $expected = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => '/path/to/file.txt',
-            'timestamp' => strtotime($updateTs),
-            'mimetype' => 'text/plain',
-            'size' => $size,
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'contents' => '',
+        $expiry = '2030-01-02 03:04:05';
+        $meta = [
+            'owner' => 'example',
         ];
-
-        $actual = $this->adapter->read($path);
-        static::assertSame($expected, $actual);
-    }
-
-    public function testReadWithExpiryFuture(): void
-    {
-        $pathId = rand(1, 1000);
-        $size = rand(1000, 99999);
-        $path = '/path/to/file.txt';
-        $updateTs = date('Y-m-d H:i:s');
-        $expiry = new \DateTimeImmutable('+2 day');
-        $expiryString = $expiry->format('Y-m-d H:i:s');
-
-        $this->setupDbFetchResponse([
-            'path_id' => $pathId,
-            'path' => $path,
-            'type' => 'file',
-            'mimetype' => 'text/plain',
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'size' => $size,
-            'is_compressed' => false,
-            'expiry' => $expiryString,
-            'update_ts' => $updateTs,
-        ]);
-
-        $expected = [
-            'path_id' => $pathId,
-            'type' => 'file',
-            'path' => '/path/to/file.txt',
-            'timestamp' => strtotime($updateTs),
-            'mimetype' => 'text/plain',
-            'size' => $size,
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'expiry' => $expiryString,
-            'contents' => '',
-        ];
-
-        $actual = $this->adapter->read($path);
-        // Change DT object to a string, for comparison
-        $actual['expiry'] = $actual['expiry']->format('Y-m-d H:i:s');
-        static::assertSame($expected, $actual);
-    }
-
-    public function testReadExcludesExpired(): void
-    {
-        $path = '/path/to/file.txt';
-
-        $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
-            ->method('prepare')
-            ->with(static::stringContains('WHERE path = :path AND (expiry IS NULL OR expiry > :now)'))
-            ->willReturn($stmt);
-
-        $stmt->expects(static::once())
-            ->method('execute')
-            ->with(static::callback(function (array $params) use ($path): bool {
-                static::assertSame($path, $params['path']);
-                static::assertNowParam($params['now']);
-                return true;
-            }))
-            ->willReturn(true);
-
-        // An expired row is excluded by the DB query
-        $stmt->expects(static::once())
-            ->method('fetch')
-            ->willReturn(false);
-
-        static::assertFalse($this->adapter->read($path));
-    }
-
-    public function testReadReturnsContents(): void
-    {
-        $path = '/path/to/file.txt';
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'path' => $path,
-            'type' => 'file',
-            'mimetype' => 'text/plain',
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
+        $this->givenFile([
+            'mimetype' => 'text/csv',
+            'visibility' => Visibility::PRIVATE,
             'size' => 1234,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
+            'update_ts' => '2026-01-02 03:04:05',
+            'expiry' => $expiry,
+            'meta' => json_encode($meta),
         ]);
-        $meta = $this->adapter->read($path);
-        static::assertArrayHasKey('contents', $meta);
+
+        static::assertSame(1234, $this->adapter->fileSize(self::PATH)->fileSize());
+        static::assertSame('text/csv', $this->adapter->mimeType(self::PATH)->mimeType());
+        static::assertSame(Visibility::PRIVATE, $this->adapter->visibility(self::PATH)->visibility());
+        static::assertSame(strtotime('2026-01-02 03:04:05'), $this->adapter->lastModified(self::PATH)->lastModified());
+
+        $attributes = $this->adapter->expiry(self::PATH);
+        static::assertEquals(new \DateTimeImmutable($expiry), $attributes->expiry());
+        static::assertSame($meta, $this->adapter->extra(self::PATH)->extraMetadata());
     }
 
-    public function testReadStreamReturnsStream(): void
+    public function testLastModifiedSqliteIsUtc(): void
     {
-        $path = '/path/to/file.txt';
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'path' => $path,
-            'type' => 'file',
-            'mimetype' => 'text/plain',
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'size' => 1234,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
+        $this->driverName = 'sqlite';
+        $this->givenFile([
+            'update_ts' => '2026-01-02 03:04:05',
         ]);
-        $meta = $this->adapter->readStream($path);
-        static::assertTrue(is_resource($meta['stream']));
-    }
 
-    public function testListContents(): void
-    {
-        $this->setupDbFetchResponse(
-            [
-                [
-                    'path_id' => 123,
-                    'path' => '/path/file.txt',
-                    'type' => 'file',
-                    'mimetype' => 'text/plain',
-                    'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-                    'size' => 1234,
-                    'is_compressed' => false,
-                    'update_ts' => date('Y-m-d H:i:s'),
-                ],
-            ],
-            'fetchAll',
+        static::assertSame(
+            strtotime('2026-01-02 03:04:05 +00:00'),
+            $this->adapter->lastModified(self::PATH)->lastModified(),
         );
-        $listing = $this->adapter->listContents('/path');
-        static::assertCount(1, $listing);
+    }
+
+    public function testMetadataForDirectory(): void
+    {
+        $this->givenFile([
+            'type' => 'dir',
+        ]);
+
+        $this->expectException(UnableToRetrieveMetadata::class);
+        $this->adapter->fileSize(self::PATH);
     }
 
     public function testListContentsExcludesExpired(): void
     {
-        $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
-            ->method('prepare')
-            ->with(static::stringContains(
-                'WHERE (expiry IS NULL OR expiry > :now)'
-                . ' AND (path = :path OR (path >= :descendant_from AND path < :descendant_to))',
-            ))
-            ->willReturn($stmt);
+        iterator_to_array($this->adapter->listContents('/path/'));
 
-        $stmt->expects(static::once())
-            ->method('execute')
-            ->with(static::callback(function (array $params): bool {
-                static::assertSame('/path/', $params['descendant_from']);
-                static::assertSame('/path0', $params['descendant_to']);
-                static::assertSame('/path', $params['path']);
-                static::assertNowParam($params['now']);
-                return true;
-            }))
-            ->willReturn(true);
-
-        $stmt->expects(static::once())
-            ->method('fetchAll')
-            ->willReturn([]);
-
-        static::assertEmpty($this->adapter->listContents('/path'));
+        $list = $this->executedOnce(self::SQL_LIST);
+        static::assertExcludesExpired($list);
+        static::assertStringContainsString('(path >= :descendant_from AND path < :descendant_to)', $list['sql']);
+        static::assertParams([
+            'descendant_from' => '/path/',
+            'descendant_to' => '/path0',
+        ], $list['params'], ['now']);
     }
 
     public function testListContentsRootExcludesExpired(): void
     {
-        $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
-            ->method('prepare')
-            ->with(static::logicalAnd(
-                static::stringEndsWith('WHERE (expiry IS NULL OR expiry > :now)'),
-                static::logicalNot(static::stringContains(':prefix')),
-            ))
-            ->willReturn($stmt);
+        iterator_to_array($this->adapter->listContents(''));
 
-        $stmt->expects(static::once())
-            ->method('execute')
-            ->with(static::callback(function (array $params): bool {
-                static::assertSame(['now'], array_keys($params));
-                static::assertNowParam($params['now']);
-                return true;
-            }))
-            ->willReturn(true);
-
-        $stmt->expects(static::once())
-            ->method('fetchAll')
-            ->willReturn([]);
-
-        static::assertEmpty($this->adapter->listContents());
+        $list = $this->executedOnce(self::SQL_LIST);
+        static::assertExcludesExpired($list);
+        static::assertStringNotContainsString('descendant', $list['sql']);
+        static::assertParams([], $list['params'], ['now']);
     }
 
-    public function testListContentsWithEmtpyResults(): void
+    public function testListContentsShallow(): void
     {
-        $this->setupDbFetchResponse([], 'fetchAll');
-        $listing = $this->adapter->listContents('/path');
-        static::assertEmpty($listing);
-    }
-
-    public function testGetMetadataHasCorrectKeysForFile(): void
-    {
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => '/path/file.txt',
-            'mimetype' => 'text/plain',
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'size' => 1234,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ]);
-
-        $meta = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp'];
-        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
-        static::assertEmpty($unexpectedKeys);
-    }
-
-    public function testGetMetadataHasCorrectKeysForFileWithAdditionalFields(): void
-    {
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => '/path/file.txt',
-            'mimetype' => 'text/plain',
-            'visibility' => AdapterInterface::VISIBILITY_PRIVATE,
-            'size' => 1234,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s'),
-            'expiry' => date('Y-m-d H:i:s', strtotime('+2 days')),
-            'meta' => json_encode([
-                'owner' => 'exampleFoo',
+        $this->respond(self::SQL_LIST, [
+            $this->row('/list/file.txt'),
+            // A directory implied by its children
+            $this->row('/list/implied/deeper/file.txt'),
+            $this->row('/list/implied/other.txt'),
+            // A directory with its own entry, after its children
+            $this->row('/list/real/file.txt'),
+            $this->row('/list/real', [
+                'type' => 'dir',
+                'visibility' => Visibility::PRIVATE,
             ]),
         ]);
 
-        $meta = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys = ['path_id', 'type', 'path', 'mimetype', 'visibility', 'size', 'timestamp', 'expiry', 'meta'];
-        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
+        $listing = $this->listing('/list');
 
-        static::assertEmpty($unexpectedKeys);
+        static::assertSame(['/list/file.txt', '/list/implied', '/list/real'], array_keys($listing));
+        static::assertInstanceOf(FileAttributes::class, $listing['/list/file.txt']);
+        static::assertInstanceOf(DirectoryAttributes::class, $listing['/list/implied']);
+        // The directory's own entry is used, rather than an implied directory
+        static::assertSame(Visibility::PRIVATE, $listing['/list/real']->visibility());
     }
 
-    public function testGetMetadataNormalizesDataForDirectory(): void
+    public function testListContentsDeep(): void
     {
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'type' => 'dir',
-            'path' => '/path/file.txt',
-            'mimetype' => null,
-            'visibility' => null,
-            'size' => null,
-            'is_compressed' => 0,
-            'update_ts' => date('Y-m-d H:i:s'),
-        ]);
-
-        $meta = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys = ['path_id', 'type', 'path', 'timestamp'];
-        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
-        static::assertEmpty($unexpectedKeys);
-    }
-
-    public function testGetMetadataNormalizesDataForDirectoryWithAdditionalFields(): void
-    {
-        $this->setupDbFetchResponse([
-            'path_id' => 123,
-            'type' => 'dir',
-            'path' => '/path/file.txt',
-            'mimetype' => null,
-            'visibility' => null,
-            'size' => null,
-            'is_compressed' => 0,
-            'update_ts' => date('Y-m-d H:i:s'),
-            'expiry' => date('Y-m-d H:i:s', strtotime('+2 days')),
-            'meta' => json_encode([
-                'owner' => 'exampleFoo',
+        $this->respond(self::SQL_LIST, [
+            $this->row('/list/file.txt'),
+            $this->row('/list/implied/deeper/file.txt'),
+            $this->row('/list/real', [
+                'type' => 'dir',
             ]),
+            // Duplicate directory entry
+            $this->row('/list/real', [
+                'type' => 'dir',
+            ]),
+            $this->row('/list/real/file.txt'),
         ]);
 
-        $meta = $this->adapter->getMetadata('/path/file.txt');
-        $expectedKeys = ['path_id', 'type', 'path', 'timestamp', 'expiry', 'meta'];
-        $unexpectedKeys = array_diff_key($meta, array_flip($expectedKeys));
-        static::assertEmpty($unexpectedKeys);
+        $listing = $this->listing('/list', true);
+
+        static::assertSame([
+            '/list/file.txt',
+            '/list/implied',
+            '/list/implied/deeper',
+            '/list/implied/deeper/file.txt',
+            '/list/real',
+            '/list/real/file.txt',
+        ], array_keys($listing));
     }
 
-    /**
-     * @param mixed $expectValue
-     */
-    #[DataProvider('individualAttributeGetMethodsDataProvider')]
-    public function testIndividualAttributeGetMethods(array $rowData, string $attribute, $expectValue): void
+    public function testListContentsRoot(): void
     {
-        $method = 'get' . ucfirst($attribute);
-        $this->setupDbFetchResponse($rowData);
-        static::assertSame($expectValue, $this->adapter->{$method}($rowData['path'])[$attribute]);
+        $this->respond(self::SQL_LIST, [
+            $this->row('/root.txt'),
+            $this->row('/list/file.txt'),
+        ]);
+
+        // A leading separator is not listed as a directory
+        static::assertSame(['/root.txt', '/list'], array_keys($this->listing('')));
     }
 
-    public static function individualAttributeGetMethodsDataProvider(): array
+    public function testListContentsWithDbFailure(): void
     {
-        $size = 1234;
-        $mimetype = 'text/plain';
-        $timestamp = time();
-        $visibility = AdapterInterface::VISIBILITY_PUBLIC;
-        $rowData = [
-            'path_id' => 123,
-            'type' => 'file',
-            'path' => '/path/file.txt',
-            'mimetype' => $mimetype,
-            'visibility' => $visibility,
-            'size' => $size,
-            'is_compressed' => false,
-            'update_ts' => date('Y-m-d H:i:s', $timestamp),
-        ];
-        return [
-            [$rowData, 'size', $size],
-            [$rowData, 'mimetype', $mimetype],
-            [$rowData, 'timestamp', $timestamp],
-            [$rowData, 'visibility', $visibility],
-        ];
+        $this->respond(self::SQL_LIST, fail: true);
+
+        // Flysystem v2 has no exception for listing; v3 adds UnableToListContents
+        $this->expectException(\PDOException::class);
+        $this->listing('/list');
     }
 
-    public function testDeleteExpiredDefault(): void
+    public function testDeleteExpired(): void
     {
-        $pathId = rand(1, 1000);
+        $this->respond(self::SQL_FIND_EXPIRED, [
+            [
+                'path_id' => 123,
+            ],
+            [
+                'path_id' => 456,
+            ],
+        ]);
 
-        $rows = [[
-            'path_id' => $pathId,
-        ]];
+        static::assertSame(2, $this->adapter->deleteExpired());
 
-        $expiredStmt = $this->createMock(\PDOStatement::class);
-        $deleteStmt = $this->createMock(\PDOStatement::class);
-        $deleteChunksStmt = $this->createMock(\PDOStatement::class);
-
-        $this->pdo->expects(static::exactly(3))
-            ->method('prepare')
-            ->with()
-            ->willReturnCallback(function (string $actualSql) use ($expiredStmt, $deleteStmt, $deleteChunksStmt): \PDOStatement {
-                static $callCount = 0;
-                $callCount++;
-
-                switch ($callCount) {
-                    case 1:
-                        static::assertStringContainsString('WHERE expiry <= :now', $actualSql);
-                        return $expiredStmt;
-                    case 2:
-                        static::assertStringContainsString('DELETE FROM flysystem_path ', $actualSql);
-                        static::assertStringContainsString('WHERE path_id = :path_id', $actualSql);
-                        return $deleteStmt;
-                    case 3:
-                        static::assertStringContainsString('DELETE FROM flysystem_chunk ', $actualSql);
-                        static::assertStringContainsString('WHERE path_id = :path_id', $actualSql);
-                        return $deleteChunksStmt;
-                    default:
-                        static::fail('Method called more times than expected');
-                }
-            });
-
-        $expiredStmt->expects(static::once())
-            ->method('execute')
-            ->with([
-                'now' => date('Y-m-d H:i:s'),
-            ])
-            ->willReturn(true);
-
-        $expiredStmt->expects(static::once())
-            ->method('fetchAll')
-            ->willReturn($rows);
-
-        $deleteStmt->expects(static::once())
-            ->method('execute')
-            ->with([
-                'path_id' => $pathId,
-            ])
-            ->willReturn(true);
-
-        $deleteChunksStmt->expects(static::once())
-            ->method('execute')
-            ->with([
-                'path_id' => $pathId,
-            ])
-            ->willReturn(true);
-
-        static::assertSame(1, $this->adapter->deleteExpired());
+        static::assertNowParam($this->executedOnce(self::SQL_FIND_EXPIRED)['params']['now']);
+        $this->assertDeleted(123);
+        $this->assertDeleted(456);
     }
 
     public function testDeleteExpiredSpecific(): void
     {
-        $expiry = new \DateTimeImmutable('+2 day');
-        $expiryString = $expiry->format('Y-m-d H:i:s');
+        $now = new \DateTimeImmutable('+2 days');
 
-        $selectSql = static::stringContains('WHERE expiry <= :now');
-        $expiredStmt = $this->createMock(\PDOStatement::class);
+        static::assertSame(0, $this->adapter->deleteExpired($now));
 
-        $this->pdo->expects(static::once())
-            ->method('prepare')
-            ->with($selectSql)
-            ->willReturn($expiredStmt);
+        static::assertSame([
+            'now' => $now->format('Y-m-d H:i:s'),
+        ], $this->executedOnce(self::SQL_FIND_EXPIRED)['params']);
+        $this->assertNotExecuted(self::SQL_DELETE_PATH);
+    }
 
-        $expiredStmt->expects(static::once())
-            ->method('execute')
-            ->with([
-                'now' => $expiryString,
-            ])
+    private function createExceptionModePdo(): \PDO&MockObject
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('getAttribute')
+            ->with(\PDO::ATTR_ERRMODE)
+            ->willReturn(\PDO::ERRMODE_EXCEPTION);
+        return $pdo;
+    }
+
+    /**
+     * The operation fails with the expected Flysystem exception, wrapping the DB exception
+     */
+    private function assertDbFailure(string $expectedException, \Closure $operation): void
+    {
+        try {
+            $operation();
+            static::fail("Expected {$expectedException} to be thrown");
+        } catch (\Exception $e) {
+            static::assertInstanceOf($expectedException, $e);
+            static::assertInstanceOf(\PDOException::class, $e->getPrevious());
+        }
+    }
+
+    /**
+     * Register the rows returned by statements whose SQL contains the fragment. The first match is used.
+     */
+    private function respond(string $match, array $rows = [], bool $fail = false, int $rowCount = 0): void
+    {
+        $this->responses[] = [
+            'match' => $match,
+            'rows' => $rows,
+            'fail' => $fail,
+            'rowCount' => $rowCount,
+        ];
+    }
+
+    /**
+     * An existing file, which is not expired, found by the path lookup
+     */
+    private function givenFile(array $row = []): void
+    {
+        $this->respond(self::SQL_LOOKUP, [$this->row(self::PATH, $row)]);
+    }
+
+    /**
+     * An existing file found by the lookup which includes expired files
+     */
+    private function givenRawFile(array $row = []): void
+    {
+        $this->respond(self::SQL_RAW_LOOKUP, [$this->row(self::PATH, $row + [
+            'is_expired' => 0,
+        ])]);
+    }
+
+    private function row(string $path, array $row = []): array
+    {
+        return $row + [
+            'path_id' => 123,
+            'type' => 'file',
+            'path' => $path,
+            'mimetype' => 'text/plain',
+            'visibility' => Visibility::PUBLIC,
+            'size' => 0,
+            'is_compressed' => 0,
+            'expiry' => null,
+            'meta' => null,
+            'update_ts' => '2026-01-02 03:04:05',
+        ];
+    }
+
+    private function prepare(string $sql): \PDOStatement
+    {
+        $response = [
+            'rows' => [],
+            'fail' => false,
+            'rowCount' => 0,
+        ];
+        foreach ($this->responses as $candidate) {
+            if (str_contains($sql, $candidate['match'])) {
+                $response = $candidate;
+                break;
+            }
+        }
+        $rows = $response['rows'];
+
+        $stmt = static::createStub(\PDOStatement::class);
+        $stmt->method('execute')
+            ->willReturnCallback(function (?array $params = null) use ($sql, $response): bool {
+                $this->executed[] = [
+                    'sql' => $sql,
+                    'params' => $params ?? [],
+                ];
+                if ($response['fail']) {
+                    throw new \PDOException('DB failure');
+                }
+                return true;
+            });
+        $stmt->method('fetch')
+            ->willReturnCallback(function () use (&$rows): array|false {
+                return array_shift($rows) ?? false;
+            });
+        $stmt->method('fetchAll')
+            ->willReturnCallback(function () use (&$rows): array {
+                $all = $rows;
+                $rows = [];
+                return $all;
+            });
+        $stmt->method('fetchColumn')
+            ->willReturnCallback(function () use (&$rows): mixed {
+                $row = array_shift($rows);
+                return $row === null ? false : reset($row);
+            });
+        $stmt->method('rowCount')
+            ->willReturn($response['rowCount']);
+        $stmt->method('closeCursor')
             ->willReturn(true);
 
-        $expiredStmt->expects(static::once())
-            ->method('fetchAll')
-            ->willReturn([]);
+        return $stmt;
+    }
 
-        static::assertSame(0, $this->adapter->deleteExpired($expiry));
+    /**
+     * @return array<int, array{sql: string, params: array}> Keyed by the order of execution
+     */
+    private function executed(string $match): array
+    {
+        return array_filter(
+            $this->executed,
+            fn(array $execution): bool => str_contains($execution['sql'], $match),
+        );
+    }
+
+    /**
+     * @return array{sql: string, params: array}
+     */
+    private function executedOnce(string $match): array
+    {
+        $executed = $this->executed($match);
+        static::assertCount(1, $executed, "Expected one execution matching '{$match}'");
+        return reset($executed);
+    }
+
+    /**
+     * The content of the chunks inserted for the path ID
+     */
+    private function writtenContent(int $pathId): string
+    {
+        $content = '';
+        foreach ($this->executed(self::SQL_INSERT_CHUNK) as $execution) {
+            if ($execution['params']['path_id'] === $pathId) {
+                $content .= $execution['params']['content'];
+            }
+        }
+        return $content;
+    }
+
+    /**
+     * @return array<string, StorageAttributes> Keyed by path
+     */
+    private function listing(string $path, bool $deep = false): array
+    {
+        $listing = [];
+        foreach ($this->adapter->listContents($path, $deep) as $item) {
+            static::assertArrayNotHasKey($item->path(), $listing, 'Duplicate listing for ' . $item->path());
+            $listing[$item->path()] = $item;
+        }
+        return $listing;
+    }
+
+    private function assertNotExecuted(string $match): void
+    {
+        static::assertEmpty($this->executed($match), "Expected no execution matching '{$match}'");
+    }
+
+    private function assertExecutedBefore(string $first, string $second): void
+    {
+        $firstIndex = array_key_first($this->executed($first));
+        $secondIndex = array_key_first($this->executed($second));
+        static::assertNotNull($firstIndex, "Expected an execution matching '{$first}'");
+        static::assertNotNull($secondIndex, "Expected an execution matching '{$second}'");
+        static::assertLessThan($secondIndex, $firstIndex, "Expected '{$first}' before '{$second}'");
+    }
+
+    /**
+     * The path entry and its chunks are deleted
+     */
+    private function assertDeleted(int $pathId): void
+    {
+        foreach ([self::SQL_DELETE_PATH, self::SQL_DELETE_CHUNKS] as $delete) {
+            $deleted = array_filter(
+                $this->executed($delete),
+                fn(array $execution): bool => ($execution['params']['path_id'] ?? null) === $pathId,
+            );
+            static::assertCount(1, $deleted, "Expected '{$delete}' for path ID {$pathId}");
+        }
+    }
+
+    /**
+     * @param array{sql: string, params: array} $execution
+     */
+    private static function assertExcludesExpired(array $execution): void
+    {
+        static::assertStringContainsString(self::NOT_EXPIRED_CONDITION, $execution['sql']);
+        static::assertArrayHasKey('now', $execution['params']);
+        static::assertNowParam($execution['params']['now']);
     }
 
     private static function assertNowParam(string $actual): void
@@ -1428,61 +1271,13 @@ class PdoAdapterTest extends TestCase
     }
 
     /**
-     * @return resource
+     * Compare params regardless of their order, optionally ignoring some which are checked separately
      */
-    protected function createTempResource($content = '')
+    private static function assertParams(array $expected, array $actual, array $ignore = []): void
     {
-        $handle = fopen('php://temp', 'w+b');
-        fwrite($handle, $content);
-        rewind($handle);
-        return $handle;
-    }
-
-    /**
-     * @param mixed $response
-     * @return \PDOStatement|MockObject
-     */
-    protected function setupBasicDbResponse($response = true): \PDOStatement
-    {
-        $stmt = $this->createMock(\PDOStatement::class);
-        $stmt->method('execute')
-            ->willReturn($response);
-
-        $this->pdo->method('prepare')
-            ->willReturn($stmt);
-
-        return $stmt;
-    }
-
-    /**
-     * @return \PDOStatement|MockObject
-     */
-    protected function setupDbFetchResponse(array $response, $method = 'fetch'): \PDOStatement
-    {
-        return $this->setupDbMultiCall([
-            [
-                'method' => $method,
-                'response' => $response,
-            ],
-        ]);
-    }
-
-    /**
-     * @return \PDOStatement|MockObject
-     */
-    public function setupDbMultiCall(array $calls): \PDOStatement
-    {
-        $stmt = $this->createMock(\PDOStatement::class);
-        $stmt->method('execute')
-            ->willReturn(true);
-        foreach ($calls as $call) {
-            $stmt->method($call['method'])
-                ->willReturn($call['response']);
-        }
-
-        $this->pdo->method('prepare')
-            ->willReturn($stmt);
-
-        return $stmt;
+        $actual = array_diff_key($actual, array_flip($ignore));
+        ksort($expected);
+        ksort($actual);
+        static::assertSame($expected, $actual);
     }
 }
