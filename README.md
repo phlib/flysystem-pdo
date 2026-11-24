@@ -107,6 +107,26 @@ scheduled task. It returns the number of files deleted.
 $deleted = $adapter->deleteExpired();
 ```
 
+#### Timezones
+The expiry is stored as a date and time without a timezone, and compared with the current time from PHP. The adapter
+expects one consistent timezone to be used by all of these:
+
+* PHP's default timezone (`date.timezone`, or `date_default_timezone_set()`), which provides the current time;
+* the `\DateTimeImmutable` given as the expiry, as its date and time are stored as-is, without conversion;
+* for MySQL, the connection's session timezone (`SET time_zone = ...`), as `TIMESTAMP` columns are converted using it.
+  This also applies to the last modified time.
+
+If these differ, files expire at the wrong time. For example, with PHP's default timezone set to `America/New_York`,
+an expiry of `new \DateTimeImmutable('+2 hours', new \DateTimeZone('UTC'))` is stored using the UTC time, which is
+5 hours ahead of the current time in New York, so the file does not expire for 7 hours. A timezone behind PHP's
+default would instead make the file expire early.
+
+To avoid this, create the expiry in PHP's default timezone, or convert it first:
+
+```php
+$expiry = $expiry->setTimezone(new \DateTimeZone(date_default_timezone_get()));
+```
+
 ### Additional Metadata
 It's possible to store additional metadata about a file or directory. This could include owner, permissions or groups
 for example. The information is stored as a JSON encoded string. Once the item is retrieved from the Filesystem the
