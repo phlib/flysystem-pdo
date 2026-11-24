@@ -983,6 +983,38 @@ class IntegrationTest extends IntegrationTestCase
         static::assertSame(Visibility::PUBLIC, $this->adapter->visibility($path)->visibility());
     }
 
+    public static function dataLastModifiedIsUpdated(): array
+    {
+        return [
+            'overwrite' => [
+                fn(PdoAdapter $adapter) => $adapter->write('/file.txt', 'new content', new Config()),
+                '/file.txt',
+            ],
+            'setVisibility' => [
+                fn(PdoAdapter $adapter) => $adapter->setVisibility('/file.txt', Visibility::PRIVATE),
+                '/file.txt',
+            ],
+            'move' => [
+                fn(PdoAdapter $adapter) => $adapter->move('/file.txt', '/moved.txt', new Config()),
+                '/moved.txt',
+            ],
+        ];
+    }
+
+    /**
+     * MySQL updates the timestamp automatically, but SQLite does not
+     */
+    #[DataProvider('dataLastModifiedIsUpdated')]
+    public function testLastModifiedIsUpdated(\Closure $operation, string $path): void
+    {
+        $this->adapter->write('/file.txt', 'content', $this->emptyConfig);
+        static::getTestDbAdapter()->exec("UPDATE flysystem_path SET update_ts = '2000-01-01 00:00:00'");
+
+        $operation($this->adapter);
+
+        static::assertEqualsWithDelta(time(), $this->adapter->lastModified($path)->lastModified(), 2);
+    }
+
     public function testDeleteExpired(): void
     {
         $content = sha1(uniqid('Test content'));

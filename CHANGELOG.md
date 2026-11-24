@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   than failing because the expired file still exists.
 - Temporary files are removed when writing or updating a file fails, or when
   updating a file that does not exist.
+- Update the last modified time on SQLite when a file is overwritten, moved or
+  has its visibility changed. MySQL already did this with `ON UPDATE`.
 ### Removed
 - Remove support for PHP versions <= v8.0 as they are no longer
   [actively supported](https://php.net/supported-versions.php) by the PHP project.

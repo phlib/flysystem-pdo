@@ -191,7 +191,8 @@ class PdoAdapter implements FilesystemAdapter
             return "{$field} = :{$field}";
         }, array_keys($data)));
 
-        $update = "UPDATE {$this->pathTable} SET {$setValues} WHERE path_id = :path_id";
+        // Set explicitly, as SQLite has no equivalent of MySQL's `ON UPDATE CURRENT_TIMESTAMP`
+        $update = "UPDATE {$this->pathTable} SET {$setValues}, update_ts = CURRENT_TIMESTAMP WHERE path_id = :path_id";
         $stmt = $this->db->prepare($update);
         $params = array_merge($data, [
             'path_id' => $pathId,
@@ -215,7 +216,7 @@ class PdoAdapter implements FilesystemAdapter
 
             $this->deleteExpiredPath($destination);
 
-            $update = "UPDATE {$this->pathTable} SET path = :destination"
+            $update = "UPDATE {$this->pathTable} SET path = :destination, update_ts = CURRENT_TIMESTAMP"
                 . " WHERE path = :source AND type = :type AND {$this->notExpiredCondition()}";
             $stmt = $this->db->prepare($update);
             $stmt->execute([
@@ -359,7 +360,8 @@ class PdoAdapter implements FilesystemAdapter
                 throw UnableToSetVisibility::atLocation($path, 'Path does not exist');
             }
 
-            $update = "UPDATE {$this->pathTable} SET visibility = :visibility WHERE path_id = :path_id";
+            $update = "UPDATE {$this->pathTable} SET visibility = :visibility, update_ts = CURRENT_TIMESTAMP"
+                . ' WHERE path_id = :path_id';
             $stmt = $this->db->prepare($update);
             $stmt->execute([
                 'visibility' => $visibility,
