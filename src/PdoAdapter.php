@@ -8,11 +8,15 @@ use League\Flysystem\Config;
 use League\Flysystem\DirectoryAttributes;
 use League\Flysystem\FilesystemAdapter;
 use League\Flysystem\StorageAttributes;
+use League\Flysystem\UnableToCheckFileExistence;
 use League\Flysystem\UnableToCopyFile;
 use League\Flysystem\UnableToCreateDirectory;
+use League\Flysystem\UnableToDeleteDirectory;
+use League\Flysystem\UnableToDeleteFile;
 use League\Flysystem\UnableToMoveFile;
 use League\Flysystem\UnableToReadFile;
 use League\Flysystem\UnableToRetrieveMetadata;
+use League\Flysystem\UnableToSetVisibility;
 use League\Flysystem\UnableToWriteFile;
 use League\Flysystem\Visibility;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
@@ -63,7 +67,11 @@ class PdoAdapter implements FilesystemAdapter
 
     public function write(string $path, string $contents, Config $config): void
     {
-        $this->doWrite($path, $contents, $config);
+        try {
+            $this->doWrite($path, $contents, $config);
+        } catch (\PDOException $e) {
+            throw UnableToWriteFile::atLocation($path, $e->getMessage(), $e);
+        }
     }
 
     /**
@@ -71,7 +79,11 @@ class PdoAdapter implements FilesystemAdapter
      */
     public function writeStream(string $path, $contents, Config $config): void
     {
-        $this->doWrite($path, $contents, $config);
+        try {
+            $this->doWrite($path, $contents, $config);
+        } catch (\PDOException $e) {
+            throw UnableToWriteFile::atLocation($path, $e->getMessage(), $e);
+        }
     }
 
     /**
@@ -188,149 +200,177 @@ class PdoAdapter implements FilesystemAdapter
 
     public function move(string $source, string $destination, Config $config): void
     {
-        if ($source === $destination) {
-            // Nothing would be updated, so the result cannot confirm the file exists
-            if (!$this->fileExists($source)) {
+        try {
+            if ($source === $destination) {
+                // Nothing would be updated, so the result cannot confirm the file exists
+                if (!$this->fileExists($source)) {
+                    throw UnableToMoveFile::fromLocationTo($source, $destination, UnableToReadFile::fromLocation($source));
+                }
+                return;
+            }
+
+            $this->deleteExpiredPath($destination);
+
+            $update = "UPDATE {$this->pathTable} SET path = :destination"
+                . " WHERE path = :source AND type = :type AND {$this->notExpiredCondition()}";
+            $stmt = $this->db->prepare($update);
+            $stmt->execute([
+                'destination' => $destination,
+                'source' => $source,
+                'type' => StorageAttributes::TYPE_FILE,
+                ...$this->getExpiredConditionBindParams(),
+            ]);
+
+            if ($stmt->rowCount() === 0) {
+                // The file does not exist, or has expired
                 throw UnableToMoveFile::fromLocationTo($source, $destination, UnableToReadFile::fromLocation($source));
             }
-            return;
-        }
-
-        $this->deleteExpiredPath($destination);
-
-        $update = "UPDATE {$this->pathTable} SET path = :destination"
-            . " WHERE path = :source AND type = :type AND {$this->notExpiredCondition()}";
-        $stmt = $this->db->prepare($update);
-        $stmt->execute([
-            'destination' => $destination,
-            'source' => $source,
-            'type' => StorageAttributes::TYPE_FILE,
-            ...$this->getExpiredConditionBindParams(),
-        ]);
-
-        if ($stmt->rowCount() === 0) {
-            // The file does not exist, or has expired
-            throw UnableToMoveFile::fromLocationTo($source, $destination, UnableToReadFile::fromLocation($source));
+        } catch (\PDOException $e) {
+            throw UnableToMoveFile::fromLocationTo($source, $destination, $e);
         }
     }
 
     public function copy(string $source, string $destination, Config $config): void
     {
-        $data = $this->findPathData($source);
-        if (!is_array($data)) {
-            throw UnableToCopyFile::fromLocationTo($source, $destination);
-        }
+        try {
+            $data = $this->findPathData($source);
+            if (!is_array($data)) {
+                throw UnableToCopyFile::fromLocationTo($source, $destination);
+            }
 
-        $newData = $data;
-        $newData['path'] = $destination;
-        unset($newData['path_id']);
-        unset($newData['update_ts']);
+            $newData = $data;
+            $newData['path'] = $destination;
+            unset($newData['path_id']);
+            unset($newData['update_ts']);
 
-        $this->deleteExpiredPath($destination);
-        $newData['path_id'] = $this->insertPath(
-            $data['type'],
-            $newData['path'],
-            $data['visibility'],
-            $data['mimetype'],
-            (int) $data['size'],
-            (bool) $data['is_compressed'],
-            $data['expiry'] ?? null,
-            $data['meta'] ?? null,
-        );
+            $this->deleteExpiredPath($destination);
+            $newData['path_id'] = $this->insertPath(
+                $data['type'],
+                $newData['path'],
+                $data['visibility'],
+                $data['mimetype'],
+                (int) $data['size'],
+                (bool) $data['is_compressed'],
+                $data['expiry'] ?? null,
+                $data['meta'] ?? null,
+            );
 
-        if ($newData['type'] === StorageAttributes::TYPE_FILE) {
-            $resource = $this->getChunkResource($data['path_id'], (bool) $data['is_compressed']);
-            $this->insertChunks($newData['path_id'], $resource, (bool) $data['is_compressed']);
-            $this->cleanupTemp($resource, '');
+            if ($newData['type'] === StorageAttributes::TYPE_FILE) {
+                $resource = $this->getChunkResource($data['path_id'], (bool) $data['is_compressed']);
+                $this->insertChunks($newData['path_id'], $resource, (bool) $data['is_compressed']);
+                $this->cleanupTemp($resource, '');
+            }
+        } catch (\PDOException $e) {
+            throw UnableToCopyFile::fromLocationTo($source, $destination, $e);
         }
     }
 
     public function delete(string $path): void
     {
-        $data = $this->findPathData($path);
-        if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_FILE) {
-            return;
-        }
+        try {
+            $data = $this->findPathData($path);
+            if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_FILE) {
+                return;
+            }
 
-        $this->deletePath($data['path_id']);
-        $this->deleteChunks($data['path_id']);
+            $this->deletePath($data['path_id']);
+            $this->deleteChunks($data['path_id']);
+        } catch (\PDOException $e) {
+            throw UnableToDeleteFile::atLocation($path, $e->getMessage(), $e);
+        }
     }
 
     public function deleteDirectory(string $path): void
     {
-        $data = $this->findPathData($path);
-        if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_DIRECTORY) {
-            return;
-        }
-
-        $select = "SELECT * FROM {$this->pathTable}";
-
-        $path = rtrim($path, '/');
-        $select .= " WHERE path = :path OR {$this->descendantCondition()}";
-        $params = [
-            'path' => $path,
-            ...$this->getDescendantConditionBindParams($path),
-        ];
-
-        $stmt = $this->db->prepare($select);
-        $stmt->execute($params);
-
-        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-
-        foreach ($rows as $row) {
-            $this->deletePath((int) $row['path_id']);
-            if ($row['type'] === StorageAttributes::TYPE_FILE) {
-                $this->deleteChunks((int) $row['path_id']);
+        try {
+            $data = $this->findPathData($path);
+            if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_DIRECTORY) {
+                return;
             }
+
+            $select = "SELECT * FROM {$this->pathTable}";
+
+            $path = rtrim($path, '/');
+            $select .= " WHERE path = :path OR {$this->descendantCondition()}";
+            $params = [
+                'path' => $path,
+                ...$this->getDescendantConditionBindParams($path),
+            ];
+
+            $stmt = $this->db->prepare($select);
+            $stmt->execute($params);
+
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            foreach ($rows as $row) {
+                $this->deletePath((int) $row['path_id']);
+                if ($row['type'] === StorageAttributes::TYPE_FILE) {
+                    $this->deleteChunks((int) $row['path_id']);
+                }
+            }
+        } catch (\PDOException $e) {
+            throw UnableToDeleteDirectory::atLocation($path, $e->getMessage(), $e);
         }
     }
 
     public function createDirectory(string $path, Config $config): void
     {
-        $existing = $this->findPathData($path);
-        if ($existing) {
-            if ($existing['type'] !== StorageAttributes::TYPE_DIRECTORY) {
-                throw UnableToCreateDirectory::atLocation($path, 'Path already exists as a file');
+        try {
+            $existing = $this->findPathData($path);
+            if ($existing) {
+                if ($existing['type'] !== StorageAttributes::TYPE_DIRECTORY) {
+                    throw UnableToCreateDirectory::atLocation($path, 'Path already exists as a file');
+                }
+                // Creating a directory is idempotent
+                return;
             }
-            // Creating a directory is idempotent
-            return;
-        }
 
-        $this->deleteExpiredPath($path);
-        $additional = null;
-        if ($config->get('meta')) {
-            $additional = $config->get('meta');
+            $this->deleteExpiredPath($path);
+            $additional = null;
+            if ($config->get('meta')) {
+                $additional = $config->get('meta');
+            }
+            $this->insertPath(
+                StorageAttributes::TYPE_DIRECTORY,
+                $path,
+                additional: $additional,
+            );
+        } catch (\PDOException $e) {
+            throw UnableToCreateDirectory::dueToFailure($path, $e);
         }
-        $this->insertPath(
-            StorageAttributes::TYPE_DIRECTORY,
-            $path,
-            additional: $additional,
-        );
     }
 
     public function setVisibility(string $path, string $visibility): void
     {
-        $update = "UPDATE {$this->pathTable} SET visibility = :visibility WHERE path = :path";
-        $data = [
-            'visibility' => $visibility,
-            'path' => $path,
-        ];
-        $stmt = $this->db->prepare($update);
-        $stmt->execute($data);
+        try {
+            $update = "UPDATE {$this->pathTable} SET visibility = :visibility WHERE path = :path";
+            $data = [
+                'visibility' => $visibility,
+                'path' => $path,
+            ];
+            $stmt = $this->db->prepare($update);
+            $stmt->execute($data);
+        } catch (\PDOException $e) {
+            throw UnableToSetVisibility::atLocation($path, $e->getMessage(), $e);
+        }
     }
 
     public function fileExists($path): bool
     {
-        $select = "SELECT 1 FROM {$this->pathTable} WHERE path = :path AND type = :type"
-            . " AND {$this->notExpiredCondition()} LIMIT 1";
-        $stmt = $this->db->prepare($select);
-        $stmt->execute([
-            'path' => $path,
-            'type' => StorageAttributes::TYPE_FILE,
-            ...$this->getExpiredConditionBindParams(),
-        ]);
+        try {
+            $select = "SELECT 1 FROM {$this->pathTable} WHERE path = :path AND type = :type"
+                . " AND {$this->notExpiredCondition()} LIMIT 1";
+            $stmt = $this->db->prepare($select);
+            $stmt->execute([
+                'path' => $path,
+                'type' => StorageAttributes::TYPE_FILE,
+                ...$this->getExpiredConditionBindParams(),
+            ]);
 
-        return (bool) $stmt->fetchColumn();
+            return (bool) $stmt->fetchColumn();
+        } catch (\PDOException $e) {
+            throw UnableToCheckFileExistence::forLocation($path, $e);
+        }
     }
 
     public function read(string $path): string
@@ -347,12 +387,16 @@ class PdoAdapter implements FilesystemAdapter
      */
     public function readStream(string $path)
     {
-        $data = $this->findPathData($path);
-        if (!is_array($data)) {
-            throw UnableToReadFile::fromLocation($path);
-        }
+        try {
+            $data = $this->findPathData($path);
+            if (!is_array($data)) {
+                throw UnableToReadFile::fromLocation($path);
+            }
 
-        return $this->getChunkResource((int) $data['path_id'], (bool) $data['is_compressed']);
+            return $this->getChunkResource((int) $data['path_id'], (bool) $data['is_compressed']);
+        } catch (\PDOException $e) {
+            throw UnableToReadFile::fromLocation($path, $e->getMessage(), $e);
+        }
     }
 
     /**
@@ -592,7 +636,11 @@ class PdoAdapter implements FilesystemAdapter
 
     private function getFileMetadataValue(string $path, string $property): FileAttributes
     {
-        $data = $this->findPathData($path);
+        try {
+            $data = $this->findPathData($path);
+        } catch (\PDOException $e) {
+            throw UnableToRetrieveMetadata::create($path, $property, $e->getMessage(), $e);
+        }
         if (!is_array($data) || $data['type'] !== StorageAttributes::TYPE_FILE) {
             throw UnableToRetrieveMetadata::create($path, $property);
         }
