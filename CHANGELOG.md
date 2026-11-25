@@ -5,6 +5,19 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+### Changed
+- **BC break**: The PDO connection must use the exception error mode,
+  `\PDO::ERRMODE_EXCEPTION`, which is the default since PHP v8.0. The
+  constructor throws `\InvalidArgumentException` for any other error mode.
+  Database errors are thrown as `\PDOException`, rather than returning `false`.
+- **BC break**: The `PdoAdapter` constructor no longer accepts `null` for the
+  config; omit the argument to use the default configuration.
+### Fixed
+- Temporary files are removed when writing or updating a file fails, or when
+  updating a file that does not exist.
+### Removed
+- Remove support for PHP versions <= v8.0 as they are no longer
+  [actively supported](https://php.net/supported-versions.php) by the PHP project.
 
 ## [2.2.0] - 2026-10-13
 ### Changed

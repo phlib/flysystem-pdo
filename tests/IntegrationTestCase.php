@@ -41,7 +41,7 @@ abstract class IntegrationTestCase extends TestCase
                     \PDO::ATTR_TIMEOUT => 2,
                     \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
                     \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
-                ]
+                ],
             );
 
             static::$testDbAdapter->query('DROP TABLE IF EXISTS flysystem_chunk');
@@ -146,7 +146,7 @@ abstract class IntegrationTestCase extends TestCase
     final protected static function assertRowCount(int $expectedCount, string $tableName, string $message = ''): void
     {
         $sql = 'SELECT COUNT(*) FROM ' . $tableName;
-        $rowCount = (int)static::getTestDbAdapter()->query($sql)->fetchColumn();
+        $rowCount = (int) static::getTestDbAdapter()->query($sql)->fetchColumn();
 
         static::assertSame($expectedCount, $rowCount, $message);
     }

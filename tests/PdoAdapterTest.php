@@ -7,40 +7,29 @@ namespace Phlib\Flysystem\Pdo\Tests;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
 use Phlib\Flysystem\Pdo\PdoAdapter;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 class PdoAdapterTest extends TestCase
 {
-    /**
-     * @var PdoAdapter
-     */
-    protected $adapter;
+    private PdoAdapter $adapter;
 
-    /**
-     * @var \PDO|MockObject
-     */
-    protected $pdo;
+    private \PDO&MockObject $pdo;
 
-    /**
-     * @var Config|MockObject
-     */
-    protected $emptyConfig;
+    private Config $emptyConfig;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->emptyConfig = new Config();
         $this->pdo = $this->createMock(\PDO::class);
+        $this->pdo->method('getAttribute')
+            ->willReturnCallback(fn(int $attribute) => match ($attribute) {
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                default => null,
+            });
         $this->adapter = new PdoAdapter($this->pdo);
-    }
-
-    protected function tearDown(): void
-    {
-        $this->adapter = null;
-        $this->pdo = null;
-        $this->emptyConfig = null;
-        parent::tearDown();
     }
 
     public function testImplementsAdapterInterface(): void
@@ -48,11 +37,96 @@ class PdoAdapterTest extends TestCase
         static::assertInstanceOf(AdapterInterface::class, $this->adapter);
     }
 
+    #[DataProvider('dataRequiresExceptionErrorMode')]
+    public function testRequiresExceptionErrorMode(int $errorMode): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('getAttribute')
+            ->with(\PDO::ATTR_ERRMODE)
+            ->willReturn($errorMode);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('ERRMODE_EXCEPTION');
+
+        new PdoAdapter($pdo);
+    }
+
+    public static function dataRequiresExceptionErrorMode(): array
+    {
+        return [
+            'silent' => [\PDO::ERRMODE_SILENT],
+            'warning' => [\PDO::ERRMODE_WARNING],
+        ];
+    }
+
+    #[DataProvider('dataDbFailureThrowsException')]
+    public function testDbFailureThrowsException(string $method, array $args): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('execute')
+            ->willThrowException(new \PDOException('DB failure'));
+        $this->pdo->method('prepare')
+            ->willReturn($stmt);
+
+        $this->expectException(\PDOException::class);
+        $this->expectExceptionMessage('DB failure');
+
+        $this->adapter->{$method}(...$args);
+    }
+
+    public static function dataDbFailureThrowsException(): array
+    {
+        $config = new Config();
+        return [
+            'write' => ['write', ['/file.txt', '', $config]],
+            'writeStream' => ['writeStream', ['/file.txt', null, $config]],
+            'update' => ['update', ['/file.txt', 'Test Content', $config]],
+            'updateStream' => ['updateStream', ['/file.txt', 'Test Content', $config]],
+            'rename' => ['rename', ['/the-old-name.asp', '/the-new-name.php']],
+            'copy' => ['copy', ['/file.txt', '/copy.txt']],
+            'delete' => ['delete', ['/file.txt']],
+            'deleteDir' => ['deleteDir', ['/some-directory']],
+            'createDir' => ['createDir', ['/path', $config]],
+            'setVisibility' => ['setVisibility', ['/file.txt', AdapterInterface::VISIBILITY_PRIVATE]],
+            'has' => ['has', ['/file.txt']],
+            'read' => ['read', ['/file.txt']],
+            'readStream' => ['readStream', ['/file.txt']],
+            'listContents' => ['listContents', ['/path']],
+            'getMetadata' => ['getMetadata', ['/file.txt']],
+            'deleteExpired' => ['deleteExpired', []],
+        ];
+    }
+
+    public function testWriteWithDbFailureRemovesTempFile(): void
+    {
+        $tempDir = sys_get_temp_dir() . '/flysystempdo-test-' . bin2hex(random_bytes(4));
+        mkdir($tempDir);
+        $adapter = new PdoAdapter($this->pdo, new Config([
+            'temp_dir' => $tempDir,
+        ]));
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('execute')
+            ->willThrowException(new \PDOException('DB failure'));
+        $this->pdo->method('prepare')
+            ->willReturn($stmt);
+
+        try {
+            $adapter->write('/file.txt', 'Test Content', $this->emptyConfig);
+            static::fail('Expected exception was not thrown');
+        } catch (\PDOException) {
+            static::assertSame([], array_diff(scandir($tempDir), ['.', '..']));
+        } finally {
+            array_map(unlink(...), glob($tempDir . '/*'));
+            rmdir($tempDir);
+        }
+    }
+
     public function testTablePrefixDefault(): void
     {
         $default = 'flysystem';
         $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
+        $this->pdo->expects(static::atLeastOnce())
             ->method('prepare')
             ->with(static::stringContains($default))
             ->willReturn($stmt);
@@ -67,7 +141,7 @@ class PdoAdapterTest extends TestCase
             'table_prefix' => $prefix,
         ]);
         $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
+        $this->pdo->expects(static::atLeastOnce())
             ->method('prepare')
             ->with(static::stringContains($prefix))
             ->willReturn($stmt);
@@ -83,7 +157,7 @@ class PdoAdapterTest extends TestCase
             'table_prefix' => $prefix,
         ]);
         $stmt = $this->createMock(\PDOStatement::class);
-        $this->pdo->expects(static::once())
+        $this->pdo->expects(static::atLeastOnce())
             ->method('prepare')
             ->with(static::stringContains($default))
             ->willReturn($stmt);
@@ -99,7 +173,7 @@ class PdoAdapterTest extends TestCase
 
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -118,7 +192,7 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $meta);
     }
 
-    public function dataExpiry(): array
+    public static function dataExpiry(): array
     {
         $future = new \DateTimeImmutable('+2 day');
         return [
@@ -133,9 +207,7 @@ class PdoAdapterTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testWriteWithExpiry($future, string $futureString): void
     {
         $this->setupBasicDbResponse();
@@ -144,7 +216,7 @@ class PdoAdapterTest extends TestCase
 
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -177,7 +249,7 @@ class PdoAdapterTest extends TestCase
 
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test Content';
@@ -205,26 +277,18 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $actual);
     }
 
-    public function testWriteWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->write('/file.txt', '', $this->emptyConfig);
-        static::assertFalse($meta);
-    }
-
     public function testWriteDetectsMimetypeByExtension(): void
     {
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $meta = $this->adapter
             ->write(
                 '/example.json',
                 '',
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertSame('application/json', $meta['mimetype']);
@@ -235,13 +299,13 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $meta = $this->adapter
             ->write(
                 '/missing-extension',
                 base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertSame('image/gif', $meta['mimetype']);
@@ -254,7 +318,7 @@ class PdoAdapterTest extends TestCase
         $pathId = rand(1, 1000);
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $path = '/some/path/to/file.txt';
         $content = 'Test File';
@@ -274,27 +338,19 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $meta);
     }
 
-    public function testWriteToStreamWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->writeStream('/file.txt', null, $this->emptyConfig);
-        static::assertFalse($meta);
-    }
-
     public function testWriteToStreamDetectsMimetypeByExtension(): void
     {
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $handle = $this->createTempResource();
         $meta = $this->adapter
             ->writeStream(
                 '/example.json',
                 $handle,
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertSame('application/json', $meta['mimetype']);
@@ -309,7 +365,7 @@ class PdoAdapterTest extends TestCase
         $this->setupBasicDbResponse();
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $content = base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true); // 1x1 transparent gif
         $handle = $this->createTempResource($content);
@@ -317,7 +373,7 @@ class PdoAdapterTest extends TestCase
             ->writeStream(
                 '/missing-extension',
                 $handle,
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertNotEquals('image/gif', $meta['mimetype']);
@@ -346,9 +402,7 @@ class PdoAdapterTest extends TestCase
         static::assertSame(strlen($content), $meta['size']);
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testUpdateWithExpiry($future, string $futureString): void
     {
         $pathId = rand(1, 1000);
@@ -434,15 +488,6 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expected, $actual);
     }
 
-    public function testUpdateWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->update('/some/path/to/file.txt', 'Test Content', $this->emptyConfig);
-
-        static::assertFalse($meta);
-    }
-
     public function testUpdateDetectsMimetypeByExtension(): void
     {
         $path = '/example.json';
@@ -483,7 +528,7 @@ class PdoAdapterTest extends TestCase
             ->update(
                 $path,
                 base64_decode('R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=', true), // 1x1 trans gif
-                $this->emptyConfig
+                $this->emptyConfig,
             );
 
         static::assertSame('image/gif', $meta['mimetype']);
@@ -510,15 +555,6 @@ class PdoAdapterTest extends TestCase
             ->updateStream($path, $content, $this->emptyConfig);
 
         static::assertSame(strlen($content), $meta['size']);
-    }
-
-    public function testUpdateToStreamWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->updateStream('/some/path/to/file.txt', 'Test Content', $this->emptyConfig);
-
-        static::assertFalse($meta);
     }
 
     public function testUpdateToStreamDetectsMimetypeByExtension(): void
@@ -584,13 +620,6 @@ class PdoAdapterTest extends TestCase
         static::assertTrue($actual);
     }
 
-    public function testRenameWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $actual = $this->adapter->rename('/the-old-name.asp', '/the-new-name.php');
-        static::assertFalse($actual);
-    }
-
     public function testRenameDirectory(): void
     {
         $path = '/the-old-name';
@@ -640,7 +669,7 @@ class PdoAdapterTest extends TestCase
         ]);
         $this->pdo->expects(static::once())
             ->method('lastInsertId')
-            ->willReturn((string)rand(1, 1000));
+            ->willReturn((string) rand(1, 1000));
 
         $actual = $this->adapter->copy($path, $newpath);
         static::assertTrue($actual);
@@ -650,7 +679,9 @@ class PdoAdapterTest extends TestCase
     {
         $path = '/the-old-name.txt';
         $newpath = '/the-new-name.txt';
-        $this->setupBasicDbResponse(false);
+        $stmt = $this->setupBasicDbResponse();
+        $stmt->method('fetch')
+            ->willReturn(false);
 
         $actual = $this->adapter->copy($path, $newpath);
         static::assertFalse($actual);
@@ -671,12 +702,6 @@ class PdoAdapterTest extends TestCase
             'type' => 'dir',
             'path_id' => 123,
         ]);
-        static::assertFalse($this->adapter->delete('/some-file.txt'));
-    }
-
-    public function testDeleteWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
         static::assertFalse($this->adapter->delete('/some-file.txt'));
     }
 
@@ -735,18 +760,12 @@ class PdoAdapterTest extends TestCase
         static::assertFalse($this->adapter->deleteDir('/some-file.txt'));
     }
 
-    public function testDeleteDirWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        static::assertFalse($this->adapter->deleteDir('/some-directory'));
-    }
-
     public function testCreateDir(): void
     {
         $pathId = 12345;
         $this->setupBasicDbResponse();
         $this->pdo->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $meta = $this->adapter->createDir('/path', $this->emptyConfig);
         static::assertSame($pathId, $meta['path_id']);
@@ -757,7 +776,7 @@ class PdoAdapterTest extends TestCase
         $pathId = 12345;
         $this->setupBasicDbResponse();
         $this->pdo->method('lastInsertId')
-            ->willReturn((string)$pathId);
+            ->willReturn((string) $pathId);
 
         $additional = [
             uniqid('key1') => sha1(uniqid('value1')),
@@ -769,13 +788,6 @@ class PdoAdapterTest extends TestCase
 
         static::assertArrayHasKey('meta', $actual);
         static::assertSame($additional, $actual['meta']);
-    }
-
-    public function testCreateDirWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter->createDir('/path', $this->emptyConfig);
-        static::assertFalse($meta);
     }
 
     public function testSetVisibility(): void
@@ -795,26 +807,12 @@ class PdoAdapterTest extends TestCase
         static::assertNotFalse($meta);
     }
 
-    public function testSetVisibilityWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter
-            ->setVisibility('/path/to/file.txt', AdapterInterface::VISIBILITY_PRIVATE);
-        static::assertFalse($meta);
-    }
-
     public function testHas(): void
     {
         $stmt = $this->setupBasicDbResponse();
         $stmt->method('fetchColumn')
             ->willReturn(1);
         static::assertTrue($this->adapter->has('/this/path'));
-    }
-
-    public function testHasWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        static::assertFalse($this->adapter->has('/this/path'));
     }
 
     public function testRead(): void
@@ -928,13 +926,6 @@ class PdoAdapterTest extends TestCase
         static::assertArrayHasKey('contents', $meta);
     }
 
-    public function testReadWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter->read('/path/to/file.txt');
-        static::assertFalse($meta);
-    }
-
     public function testReadStreamReturnsStream(): void
     {
         $path = '/path/to/file.txt';
@@ -952,13 +943,6 @@ class PdoAdapterTest extends TestCase
         static::assertTrue(is_resource($meta['stream']));
     }
 
-    public function testReadStreamWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        $meta = $this->adapter->readStream('/path/to/file.txt');
-        static::assertFalse($meta);
-    }
-
     public function testListContents(): void
     {
         $this->setupDbFetchResponse(
@@ -974,7 +958,7 @@ class PdoAdapterTest extends TestCase
                     'update_ts' => date('Y-m-d H:i:s'),
                 ],
             ],
-            'fetchAll'
+            'fetchAll',
         );
         $listing = $this->adapter->listContents('/path');
         static::assertCount(1, $listing);
@@ -983,13 +967,6 @@ class PdoAdapterTest extends TestCase
     public function testListContentsWithEmtpyResults(): void
     {
         $this->setupDbFetchResponse([], 'fetchAll');
-        $listing = $this->adapter->listContents('/path');
-        static::assertEmpty($listing);
-    }
-
-    public function testListContentsWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
         $listing = $this->adapter->listContents('/path');
         static::assertEmpty($listing);
     }
@@ -1079,16 +1056,10 @@ class PdoAdapterTest extends TestCase
         static::assertEmpty($unexpectedKeys);
     }
 
-    public function testGetMetadataWithDbFailure(): void
-    {
-        $this->setupBasicDbResponse(false);
-        static::assertFalse($this->adapter->getMetadata('/path'));
-    }
-
     /**
      * @param mixed $expectValue
-     * @dataProvider individualAttributeGetMethodsDataProvider
      */
+    #[DataProvider('individualAttributeGetMethodsDataProvider')]
     public function testIndividualAttributeGetMethods(array $rowData, string $attribute, $expectValue): void
     {
         $method = 'get' . ucfirst($attribute);
@@ -1096,7 +1067,7 @@ class PdoAdapterTest extends TestCase
         static::assertSame($expectValue, $this->adapter->{$method}($rowData['path'])[$attribute]);
     }
 
-    public function individualAttributeGetMethodsDataProvider(): array
+    public static function individualAttributeGetMethodsDataProvider(): array
     {
         $size = 1234;
         $mimetype = 'text/plain';
@@ -1128,25 +1099,28 @@ class PdoAdapterTest extends TestCase
             'path_id' => $pathId,
         ]];
 
-        $selectSql = static::stringContains('WHERE expiry <= :now');
         $expiredStmt = $this->createMock(\PDOStatement::class);
-
-        $deleteSql = static::logicalAnd(
-            static::stringContains('DELETE FROM '),
-            static::stringContains('WHERE path_id = :path_id'),
-        );
         $deleteStmt = $this->createMock(\PDOStatement::class);
 
         $this->pdo->expects(static::exactly(2))
             ->method('prepare')
-            ->withConsecutive(
-                [$selectSql],
-                [$deleteSql],
-            )
-            ->willReturnOnConsecutiveCalls(
-                $expiredStmt,
-                $deleteStmt,
-            );
+            ->with()
+            ->willReturnCallback(function (string $actualSql) use ($expiredStmt, $deleteStmt): \PDOStatement {
+                static $callCount = 0;
+                $callCount++;
+
+                switch ($callCount) {
+                    case 1:
+                        static::assertStringContainsString('WHERE expiry <= :now', $actualSql);
+                        return $expiredStmt;
+                    case 2:
+                        static::assertStringContainsString('DELETE FROM ', $actualSql);
+                        static::assertStringContainsString('WHERE path_id = :path_id', $actualSql);
+                        return $deleteStmt;
+                    default:
+                        static::fail('Method called more times than expected');
+                }
+            });
 
         $expiredStmt->expects(static::once())
             ->method('execute')
@@ -1173,9 +1147,7 @@ class PdoAdapterTest extends TestCase
         $this->adapter->deleteExpired();
     }
 
-    /**
-     * @dataProvider dataExpiry
-     */
+    #[DataProvider('dataExpiry')]
     public function testDeleteExpiredSpecific($future, string $futureString): void
     {
         $expiry = $future;
