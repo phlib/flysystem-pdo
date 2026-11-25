@@ -8,6 +8,11 @@ use PHPUnit\Framework\TestCase;
 
 abstract class IntegrationTestCase extends TestCase
 {
+    /**
+     * Lowercase letters and spaces only, so test file content is always detected as text/plain.
+     */
+    private const RANDOM_CHARACTERS = 'abcdefghijklmnopqrstuvwxyz ';
+
     private static \PDO $testDbAdapter;
 
     private static string $driver;
@@ -99,28 +104,27 @@ abstract class IntegrationTestCase extends TestCase
 
     private static function fillFile($filename, $sizeKb): void
     {
+        // The content must always be detected as text/plain. Random characters can look like the start of another
+        // format to libmagic (e.g. HP-GL, troff, PBM), so start with a fixed plain text line, then use only random
+        // lowercase letters and spaces, with no newlines or punctuation.
+        $header = "flysystem-pdo test file\n";
         $chunkSize = 1024;
         $handle = fopen($filename, 'wb+');
         for ($i = 0; $i < $sizeKb; $i += $chunkSize) {
-            fwrite($handle, static::randomString($chunkSize), $chunkSize);
+            $chunk = ($i === 0) ? $header : '';
+            $chunk .= static::randomString($chunkSize - strlen($chunk));
+            fwrite($handle, $chunk);
         }
         fclose($handle);
     }
 
-    private static function randomString($length): string
+    private static function randomString(int $length): string
     {
-        static $characters;
-        static $charLength;
-        if (!$characters) {
-            $characters = array_merge(range(0, 9), range('a', 'z'), range('A', 'Z'), [',', '.', ' ', "\n"]);
-            $charLength = count($characters);
-            shuffle($characters);
-        }
+        $end = strlen(self::RANDOM_CHARACTERS) - 1;
 
         $string = '';
-        $end = ($charLength - 1);
         for ($i = 0; $i < $length; $i++) {
-            $string .= $characters[rand(0, $end)];
+            $string .= self::RANDOM_CHARACTERS[random_int(0, $end)];
         }
         return $string;
     }
