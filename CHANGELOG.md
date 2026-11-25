@@ -15,8 +15,19 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - **BC break**: Expiry date is always set & retrieved using \DateTimeImmutable.
 - **BC break**: `deleteExpired()` no longer accepts `null`; omit the argument to
   use the current time.
+- Expired files are excluded by the DB queries, rather than being filtered after
+  they have been read.
+- Writing a new file with an expiry in the past does not store the file.
+- **BC break**: DB schema adds a unique index on `path` and an index on
+  `expiry`. Paths are case-sensitive on MySQL, using the `utf8mb4_bin`
+  collation. See the README for updating existing tables.
+- `createDir()` returns the existing directory, rather than creating a
+  duplicate.
 ### Fixed
 - Delete file storage chunks for expired files when calling `deleteExpired()`.
+- `has()` and `listContents()` no longer include expired files.
+- A file can be written to a path where a previous file has expired, rather
+  than failing because the expired file still exists.
 - Temporary files are removed when writing or updating a file fails, or when
   updating a file that does not exist.
 ### Removed

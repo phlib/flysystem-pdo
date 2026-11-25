@@ -175,7 +175,7 @@ class MemoryTest extends IntegrationTestCase
         $file = fopen(static::$tempFiles['s'], 'r');
         $adapter->writeStream($path, $file, new Config());
         rewind($file);
-        $adapter->writeStream($path, $file, new Config());
+        $adapter->updateStream($path, $file, new Config());
         fclose($file);
         $read = $adapter->readStream($path);
         fclose($read['stream']);

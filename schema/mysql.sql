@@ -1,7 +1,7 @@
 CREATE TABLE `flysystem_path` (
   `path_id` MEDIUMINT UNSIGNED NOT NULL AUTO_INCREMENT, -- 16,777,215
   `type` ENUM('dir', 'file') NOT NULL,
-  `path` VARCHAR(255) CHARACTER SET utf8mb4 NOT NULL,
+  `path` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `mimetype` VARCHAR(255) DEFAULT NULL,
   `visibility` VARCHAR(25) DEFAULT '',
   `size` INT UNSIGNED DEFAULT NULL, -- equivalent to storing 4G file
@@ -9,7 +9,9 @@ CREATE TABLE `flysystem_path` (
   `expiry` TIMESTAMP NULL DEFAULT NULL,
   `meta` TEXT CHARACTER SET utf8mb4,
   `update_ts` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`path_id`)
+  PRIMARY KEY (`path_id`),
+  UNIQUE KEY `idx_path` (`path`),
+  KEY `idx_expiry` (`expiry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=ascii;
 
 CREATE TABLE `flysystem_chunk` (
