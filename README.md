@@ -73,7 +73,7 @@ The sample schemas include the columns, but they are optional and may be omitted
 
 |Name|Type|Description|
 |----|----|-----------|
-|expiry|string|Specify a expiry time for the file|
+|expiry|`\DateTimeImmutable`|Specify an expiry time for the file|
 |meta|mixed|Any additional information. Uses JSON encoding to store the information|
 
 ### Expiry
@@ -85,7 +85,9 @@ exist or has expired.
 #### Example
 
 ```php
-$config = new Config(['expiry' => date('Y-m-d H:i:s', strtotime('+2 days'))]);
+$config = new Config([
+    'expiry' => new \DateTimeImmutable('+2 days'),
+]);
 $adapter->write($path, $content, $config);
 ```
 
@@ -98,6 +100,13 @@ $data = $adapter->getMetadata($path);
     '...',
     'expiry' => ''
 ]
+```
+
+Expired files remain in the database until they are removed. Use `deleteExpired()` to purge them, for example from a
+scheduled task. It returns the number of files deleted.
+
+```php
+$deleted = $adapter->deleteExpired();
 ```
 
 ### Additional Metadata
